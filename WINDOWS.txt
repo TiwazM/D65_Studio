@@ -1,0 +1,132 @@
+D65 Studio 0.3.1 — Windows x64 preview, revision 2
+15 October 2026
+
+REVISION 2
+Image writes, read-back and FAT scans now use up to 256 KiB per transfer instead
+of one 512-byte request at a time. The same improvement is in the macOS source.
+Windows supports existing SD-card subfolders, including validated long folder
+names, and displays export phase/elapsed time. The image filename is still a NEW
+uppercase 8.3 name. Missing or unrecognized optional FSInfo hints no longer cause
+an "Invalid FSInfo signatures; repair the card" error. Such sectors are left
+untouched; the actual FATs and file chains still determine whether export is safe.
+The MEGA65 disk format and loader remain 0.3.1. This is a Windows build revision.
+
+START
+Extract the whole ZIP to a writable folder, then double-click d65-studio.exe.
+Choose New disk or Open image. Samples contains original diagnostic images.
+No Rust, Python, browser, downloaded helper, Visual C++ redistributable, or
+third-party filesystem driver is needed. The executable uses built-in Windows
+DLLs and includes its C runtime. An OpenGL-capable display driver is required.
+The binary is unsigned. This preview was built/tested on Windows build
+26300.9550, x64; other Windows builds and ARM64 have not been executed here.
+
+Keep the application running while an image is mounted. Eject through the app
+before closing it or opening the same image in an emulator. Changes save to the
+image, with a backup on the first edit of each session. See README.md for editing,
+conversion, merge and loader limits. No image is uploaded or sent off the PC.
+
+EXPLORER DRIVE
+Open an image, choose Mount in Explorer, then Show in Explorer. The app chooses
+an unused drive letter from Z down to D. The status area reports the letter.
+Copy, replace, rename or delete .prg, .seq and .usr files in the flat directory.
+Use Eject volume after closing open files/windows on the drive. Read-only images
+and the Mount read-only option reject writes at the server.
+
+The local WebDAV bridge binds only to 127.0.0.1 on a random port and random
+session URL. Windows' built-in WebClient maps it to a temporary drive; mappings
+are not saved for the next sign-in. No credentials are requested by the app.
+The bridge stops after the mapping is removed. Arbitrary document editors,
+folders, resource forks and persistent per-file timestamps are not supported.
+
+WebClient is required for Explorer mounting. Windows may start an enabled manual
+service on demand. If WebClient is absent, disabled, inaccessible, or blocked by
+policy, the app explains the limitation. Ask your administrator about built-in
+WebClient availability; D65 Studio never changes service configuration, registry
+authentication policy, firewall settings or installs a driver. Import/extract
+and image editing continue to work without WebClient. Microsoft has deprecated
+WebClient, so its availability is not guaranteed in future Windows editions.
+
+CONTIGUOUS SD EXPORT — PHYSICAL VALIDATION PENDING
+Open the finished image, click Export to SD card, select the card's drive-letter
+root or an existing folder (for example E:\Games\Demos), and choose a NEW uppercase
+8.3 name such as TEST01.D65. Create any folders in Explorer before starting export.
+Confirm the actual card's drive letter before approving Windows administrator
+authorization. Close Explorer windows and other programs using the card first.
+Only the same executable's short-lived SD helper runs elevated. The editor and
+Explorer bridge should normally run as your ordinary user.
+
+The adapter accepts removable physical USB/SD/MMC devices with one partition
+extent, 512-byte sectors, FAT32 and 4096-byte clusters. It refuses internal/fixed,
+virtual, whole-disk and Windows-system-disk destinations. Readers that report
+fixed or unknown media, lack required identity queries, or use mounted-folder
+paths are deliberately unsupported. Junctions, symbolic links and network paths
+are refused. Folder names are resolved again from FAT32 while exclusively locked;
+no cluster address from the earlier Windows path lookup is trusted. If a folder
+name cannot be resolved, use its short alias. Folder depth is limited to 64.
+
+The exporter checks the volume GUID, FAT serial, device descriptor, disk and
+partition numbers, partition offset/size, and sector size across authorization.
+It locks the volume exclusively before dismounting it. It rechecks the open
+handle before raw writes. It uses the shared FAT32 writer to validate
+both FATs and reachable chains, find a consecutive free cluster run, write and
+read back the data, publish a NEW entry in the selected folder, and verify the
+metadata. Valid FSInfo hints are updated from the actual FAT scan. It then
+closes the lock and compares the remounted file byte-for-byte again.
+
+Sequential writes alone are not a guarantee of contiguity. This exporter writes
+and verifies the actual consecutive FAT chain. It never falls back to an ordinary
+copy, overwrites an existing file, relocates other files, edits the partition
+table, formats, creates folders or expands directories. A dirty or mismatched
+FAT, full destination directory, duplicate name or insufficient consecutive free
+space is refused. The directory inside a D65/D81 image remains flat: SD-card
+subfolders do not add folders to the MEGA65 disk format or the mounted image.
+
+The Windows status shows the current phase and elapsed time. A complete chain
+audit may still take time on cards with many folders. No integrity check was
+removed to improve speed. Cross-account administrator elevation may show only
+elapsed time if its process cannot access the local progress channel.
+
+Keep the card connected until the result appears. On success, safely eject it
+in Windows and use the exported file directly on the MEGA65. Another Explorer
+copy can fragment it and loses this export's allocation guarantee.
+
+RECOVERY
+Before raw writes, the elevated helper saves a flushed metadata.journal and
+identity.txt in a fresh d65-recovery-* folder in its Windows temporary directory.
+Caught failures restore and verify original metadata. Errors report the retained
+records path. A failed restoration attempts to leave the volume offline. If the
+device cannot be taken offline, a warning holds the exclusive lock: remove the
+card BEFORE dismissing that warning. Do not remount or use a card needing recovery.
+Do not delete retained records; preserve them for diagnosis/manual recovery.
+
+The journal uses the existing D65FATJ1 format: original boot sector, sector count,
+and before/after metadata sectors. It is not an automatic repair facility. Power
+loss, process termination or physical removal is not an atomic transaction and
+cannot guarantee that Windows will keep the volume offline. No power-loss or
+physical-card export result is claimed for this Windows preview.
+
+TEST STATUS
+See verification/windows/Results.txt for exact results and reproduction.
+Windows Rust tests, file-backed FAT32 simulation and native WebClient read/write,
+rename, delete, persistence, read-only enforcement and eject tests passed.
+The revision 2 graphical application launched and its initial window rendered
+correctly. Dialog interactions and the physical export progress UI were not
+exercised end-to-end. No physical SD card was written or formatted by testing.
+Mac ARM64 and Intel source checks passed; the Mac app was not relinked or executed
+on this Windows machine. The existing Mac build script remains; its raw SD adapter
+now supports batched I/O, while its destination selection still uses card roots.
+
+MEGA65 / LOADER
+The D65/D81 formats, internal disk allocator and loader binaries are unchanged. The original
+0.3.1 LOAD hook passed Xemu D81 controls with ROM 920413; that is supplied prior
+evidence, not a new Windows emulator run. Extended-sector operation still needs
+real MEGA65 confirmation. Reset between HOOKBAS and HOOKTEST. See
+launcher/LOAD-compatibility.txt and launcher/Resident-driver.txt. Do not SAVE,
+SCRATCH or VALIDATE experimental merged/resident compilations on the MEGA65.
+
+DEVELOPERS ONLY
+The source ZIP includes build-windows.ps1. With Rust/MSVC installed, run:
+  powershell -File .\build-windows.ps1 -TestWebClient
+Normal users do not need to run this or install developer tools.
+The optional native mapping test requires working WebClient and a free letter.
+For macOS, retain the existing ./build-macos.sh workflow on a Mac.
