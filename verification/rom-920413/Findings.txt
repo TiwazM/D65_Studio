@@ -1,0 +1,74 @@
+MEGA65 ROM 920413: D65 sector and allocation-map investigation
+14 October 2026
+
+RESULT
+This ROM's standard disk routines reject logical sectors 40 and above.
+Its allocation map (BAM) describes only 40 sectors per track. Expanding
+or concatenating BAMs in a disk image cannot by itself enable larger disks.
+The experimental merged images need a suitably modified ROM or a custom
+loader to read later banks. Fully writable support needs further ROM work.
+This corrects earlier advice that later-bank loading only awaited hardware
+verification. The merge tool preserves data offline, but that does not prove
+compatibility with the MEGA65 ROM.
+
+ROM IDENTIFICATION
+User-supplied MEGA65.ROM: 131072 bytes; version marker 920413.
+SHA-256: af3c447f791a2fdc48cb21e1bd3fab015e32641228d9d30d21259b9e878c6fa0
+Identical to the ROM in the installed Xemu profile. Original left unchanged.
+The first 16 KiB is DOS code mapped at CPU $8000-$BFFF.
+Addresses below are CPU addresses; subtract $8000 for file offsets.
+
+EVIDENCE IN THE ROM
+$9583-$9588: fetch requested sector, compare with $28 (40), branch to
+             the error path if sector >= 40. This precedes read/write dispatch.
+$9845:       load error $66, subsequently displayed as error 66.
+$A8A8:       non-D64 geometry setup uses 40 sectors per track.
+$A8EE:       BAM loading explicitly reads sectors 1 and 2.
+$A925:       BAM writeback explicitly writes sectors 1 and 2.
+$AA1D:       BAM initialization uses count 40 and five bitmap bytes per track.
+$AB34:       BAM pointer calculation uses six-byte track entries and switches
+             to the second BAM page at track 41.
+$AAE5:       BAM count checker counts five bitmap bytes for this format.
+$9225:       free-sector search uses upper bound 39.
+$AB5E:       bitmap lookup on sector 40 lands in the next track's count byte.
+
+EXECUTION CHECKS
+1. Targeted ROM routines executed with Xemu's actual 65CE02 CPU core,
+   synthetic RAM/registers, and an unchanged ROM copy. Tested the controller
+   D65 flag both clear and set. Sectors 40, 79, 80 and 119 were rejected in
+   either case; sector 39 passed initial validation. Allocation could find
+   sector 39 but not 40. See probe-results.txt.
+2. Full installed Xemu, using ROM 920413, loaded a one-sector control PRG
+   from D81 track 1/sector 39 and printed D65 STUDIO TEST OK.
+3. The same test with a directory pointer deliberately changed to sector 40
+   produced: 66,ILLEGAL TRACK OR SECTOR,01,40.
+   See the two xemu-sector screen-text files. The injected starter program
+   printed different text, so it could not explain the successful disk load.
+
+LIMITS
+Installed Xemu cannot mount our D65 container. The full-machine experiment
+therefore used D81 fixtures to exercise the ROM's normal loading path; it
+was not a real-hardware or full D65 test. Targeted D65-flag tests use synthetic
+controller state. No claim is made about other ROM versions, runtime ROM
+patches, custom loaders, or every possible entry point in this ROM.
+The standard D81-compatible area of a D65 (sectors 0-39) is a separate case;
+these findings do not establish that ordinary D65 images are unusable.
+
+WHAT WOULD NEED TO CHANGE
+For larger disks through normal LOAD/SAVE: sector validation and geometry,
+BAM format and RAM storage, its loading/writeback, allocation/freeing and
+free-block counts, plus formatting and maintenance operations such as
+VALIDATE and SCRATCH. File types with extra metadata require separate review.
+Changing just a 40-sector constant would let bitmap access overlap unrelated
+metadata and is not a safe patch. A custom reader could bypass standard DOS
+for loading but would not automatically provide ordinary SAVE support.
+Gardners' sector-bank proposal remains a possible layout experiment; this
+specific ROM does not provide the matching standard filesystem support.
+
+REPRODUCTION SOURCES
+Xemu CPU/disassembler source used for targeted tests:
+https://github.com/lgblgblgb/xemu/tree/40dfef0d1d5f56be2469492715c12bdb32c75b67/xemu
+Installed Xemu full-machine build: f0a711c5a46f49929132ac2272d564cd143d68e6
+ROM mapping documentation:
+https://github.com/MEGA65/mega65-user-guide/blob/430fcbfadb98dc610c74d8be4aaef95f2ce7525e/appendix-memorymap.tex
+No ROM binary is included with this report or the application.

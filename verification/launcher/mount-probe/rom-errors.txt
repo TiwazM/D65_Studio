@@ -1,0 +1,5 @@
+Hypervisor carry=0 A=$88 -> same BASIC error index $04 (FILE NOT FOUND)
+Hypervisor carry=0 A=$8A -> same BASIC error index $04 (FILE NOT FOUND)
+Hypervisor carry=0 A=$8B -> same BASIC error index $04 (FILE NOT FOUND)
+Hypervisor carry=0 A=$FF -> same BASIC error index $04 (FILE NOT FOUND)
+Hypervisor carry=1 A=$00 -> normal return

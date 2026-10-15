@@ -1,0 +1,13 @@
+On 14 October 2026, the user confirmed BANK 2 OK on real MEGA65 hardware with ROM 920413 after applying the one-byte RAM correction to the original D65DEMO reader. BANK2 starts at logical track 39/sector 80, beyond the standard D81 sector range. The user subsequently confirmed that the rebuilt D65FULL mounts, DIR lists through EXTRA38, START opens, and choice 38 prints EXTRA PROGRAM 38 OK. This is a successful 40,000-byte program load from the extra sectors of the 1,520,000-byte compilation on real hardware. It does not mean every program was individually run on hardware. D65FIX still returns FF during mounting. The Freezer FF mount error remains unresolved.
+
+Observed sequence: corrected directory lists; START menu opens;
+BANK2 initially fails with D081/D082 = 64/68. After BANK 0 and
+POKE 24821,24 followed by RUN 100, choosing 2 prints BANK 2 OK.
+This does not establish writable extended allocation or support for
+programs that perform ordinary secondary DOS loads.
+
+
+Capacity hardware report: "d65full gives me a dir of up to extra38 / run start works / extra program 38 ok".
+EXTRA38 starts at logical track 73/sector 84 and has 40,000 PRG bytes.
+Local image SHA-256: 9f7f085590061b816acb67d6939abf3eef9635bd4e62eac7ca767fc519cf5f6b.
+The SD-card copy has not yet been compared with this local hash.

@@ -1,0 +1,19 @@
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}       THE MEGA65 PERSONAL COMPUTER SYSTEM
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}        (C) 2021 MEGA, 1991 COMMODORE, 1977 MICROSOFT
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}                BASIC 65 V920413 14-OCT-2026 14:49:14
+
+READY  <$2001-$202D,45 BYTES>
+ DIR:RUN"BANK2":
+   0 {$A2}{ret}{wht}{rvon}{bell}{wht}{$A0}{uloff}{$81}{text}{shen}{$A0}{$B2}{$A0}{$A0}{$A0}{$A0}{$A2}{$A0}{$B6}{$B5}{$A0}{$B1}{$84}
+   1 "BANK2"            PRG
+  52 "PAD2"             USR
+3107 BLOCKS FREE
+
+LOADING 0:BANK2
+BANK 2 OK
+
+READY.
+{$A0}

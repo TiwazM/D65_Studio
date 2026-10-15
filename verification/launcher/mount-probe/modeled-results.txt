@@ -1,0 +1,24 @@
+PASS modeled hypervisor scenario 0
+PASS modeled hypervisor scenario 1
+D65 MOUNT CHECK - C=1 SUCCESS; A/E HEX
+ROOT   C=1 A=00 E=00
+
+TRYFIX.D65
+SET    C=1 A=00 E=00
+FIND   C=1 A=00 E=00
+OLD40  C=1 A=00 E=00
+NEW4A  C=1 A=00 E=00
+
+GAMES.D65
+SET    C=1 A=00 E=00
+FIND   C=1 A=00 E=00
+OLD40  C=0 A=8B E=8B
+NEW4A  C=0 A=8B E=8B
+
+LAUNCH.D65
+SET    C=1 A=00 E=00
+FIND   C=0 A=88 E=88
+DONE - NO DISK FILES WRITTEN
+
+PASS modeled hypervisor scenario 2
+PASS modeled hypervisor scenario 3

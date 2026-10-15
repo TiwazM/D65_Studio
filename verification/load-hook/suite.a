@@ -1,0 +1,309 @@
+!cpu 4502
+* = $2001
+!word basic_end
+!word 10
+!byte $fe,$02
+!text "0:"
+!byte $9e
+!text "8224"
+!byte 0
+basic_end: !word 0
+!fill $2020-*,0
+start:
+    lda #0
+    sta $1ef0
+    lda #1
+    sta $1ef2
+    jsr setup
+    ldy #$70
+    lda #$74
+    sta $d640
+    clv
+    lda #0
+    ldx #0
+    ldy #$c0
+    ldz #$37
+    sed
+    jsr $ffd5
+    lbcs fail
+    php
+    pla
+    and #8
+    lbeq fail
+    cld
+    tza
+    cmp #$37
+    lbne fail
+    cpx #4
+    lbne fail
+    cpy #$c0
+    lbne fail
+    lda #$c0
+    ldx #$00
+    jsr physical
+    cmp #$11
+    lbne fail
+    lda #$c0
+    ldx #$03
+    jsr physical
+    cmp #$44
+    lbne fail
+    ldy #$71
+    lda #$74
+    sta $d640
+    clv
+    ldx #5
+maps:
+    lda $7000,x
+    cmp $7100,x
+    lbne fail
+    dex
+    bpl maps
+    inc $1ef2
+    jsr setup
+    lda #2
+    ldx #8
+    ldy #0
+    jsr $ffba
+    lda #0
+    ldx #0
+    ldy #$a0
+    jsr $ffd5
+    lbcs fail
+    lda #$a0
+    ldx #$03
+    jsr physical
+    cmp #$44
+    lbne fail
+    inc $1ef2
+    jsr setup
+    lda #1
+    ldx #0
+    jsr $ff6b
+    lda #2
+    ldx #8
+    ldy #0
+    jsr $ffba
+    lda #0
+    ldx #0
+    ldy #$30
+    jsr $ffd5
+    lbcs fail
+    lda #0
+    sta $f3
+    sta $f6
+    lda #$30
+    sta $f4
+    lda #1
+    sta $f5
+    ldz #3
+    !byte $ea
+    lda ($f3),z
+    cmp #$44
+    lbne fail
+    inc $1ef2
+    jsr setup
+    lda #2
+    ldx #8
+    ldy #0
+    jsr $ffba
+    lda #$40
+    ldx #0
+    ldy #$c1
+    jsr $ffd5
+    lbcs fail
+    cpx #6
+    lbne fail
+    lda #$c1
+    ldx #$00
+    jsr physical
+    lbne fail
+    lda #$c1
+    ldx #$01
+    jsr physical
+    cmp #$c0
+    lbne fail
+    lda #$c1
+    ldx #$05
+    jsr physical
+    cmp #$44
+    lbne fail
+    inc $1ef2
+    ldx #7
+    lda #$5a
+sentinels:
+    sta $f3,x
+    dex
+    bpl sentinels
+    jsr setup
+    lda #1
+    jsr $ffd5
+    lbcs fail
+    jsr $ffb7
+    lbne fail
+    ldx #7
+check_sentinels:
+    lda $f3,x
+    cmp #$5a
+    lbne fail
+    dex
+    bpl check_sentinels
+    inc $1ef2
+    lda #$99
+    sta $c003
+    jsr setup
+    lda #1
+    jsr $ffd5
+    lbcs fail
+    jsr $ffb7
+    and #16
+    lbeq fail
+    lda #$c0
+    ldx #$03
+    jsr physical
+    cmp #$99
+    lbne fail
+    inc $1ef2
+    jsr setup
+    lda #7
+    ldx #<missing
+    ldy #>missing
+    jsr $ffbd
+    lda #0
+    jsr $ffd5
+    lbcc fail
+    cmp #4
+    lbne fail
+    inc $1ef2
+    jsr setup
+    lda #2
+    ldx #8
+    ldy #0
+    jsr $ffba
+    lda #0
+    ldx #0
+    ldy #$16
+    jsr $ffd5
+    lbcc fail
+    cmp #6
+    lbne fail
+    inc $1ef2
+    jsr setup
+    lda #5
+    ldx #0
+    jsr $ff6b
+    lda #0
+    jsr $ffd5
+    lbcc fail
+    cmp #6
+    lbne fail
+    inc $1ef2
+    jsr setup
+    lda #2
+    ldx #9
+    ldy #1
+    jsr $ffba
+    lda #0
+    jsr $ffd5
+    lbcc fail
+    cmp #5
+    beq other_device_error
+    cmp #4
+    lbne fail
+other_device_error:
+    lda $1e8d
+    cmp #2
+    lbne fail
+    inc $1ef2
+    jsr setup
+    lda #7
+    ldx #<prefix
+    ldy #>prefix
+    jsr $ffbd
+    lda #0
+    jsr $ffd5
+    lbcs fail
+    lda #$c0
+    ldx #$03
+    jsr physical
+    cmp #$44
+    lbne fail
+    inc $1ef2
+    jsr $1c46
+    lbcs fail
+    lda $0330
+    cmp #$e0
+    lbne fail
+    lda $0331
+    cmp #$f4
+    lbne fail
+    inc $1ef2
+    jsr $1c43
+    lbcs fail
+    inc $1ef2
+    jsr setup
+    lda #0
+    jsr $ffd5
+    lbcs fail
+    lda #$c0
+    ldx #$03
+    jsr physical
+    cmp #$44
+    lbne fail
+    lda #1
+    sta $1ef0
+    ldx #0
+print:
+    lda message,x
+    beq done
+    phx
+    jsr $ffd2
+    plx
+    inx
+    bra print
+done:
+    rts
+fail:
+    sta $1ef1
+    cld
+    lda #$ff
+    sta $1ef0
+    ldx #0
+failprint:
+    lda error,x
+    beq done
+    phx
+    jsr $ffd2
+    plx
+    inx
+    bra failprint
+setup:
+    lda #0
+    ldx #0
+    jsr $ff6b
+    lda #2
+    ldx #8
+    ldy #1
+    jsr $ffba
+    lda #5
+    ldx #<filename
+    ldy #>filename
+    jmp $ffbd
+filename: !text "LEVEL"
+prefix: !text "0:LEVEL"
+missing: !text "MISSING"
+message: !text "ALL 14 LOAD HOOK CHECKS PASSED"
+    !byte 13,0
+error: !text "LOAD HOOK TEST FAILED"
+    !byte 13,0
+
+physical:
+    stx $f3
+    sta $f4
+    lda #0
+    sta $f5
+    sta $f6
+    ldz #0
+    !byte $ea
+    lda ($f3),z
+    rts

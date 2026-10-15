@@ -1,0 +1,42 @@
+D65 Studio 0.2.2: buffered SD-image LOST status correction
+
+Hardware observations on ROM 920413:
+D65DEMO mounts, lists its directory and loads START. BANK2 fails.
+D68B/D68A reads using BANK 128 return decimal 71/2 ($47/$02).
+After failure D081/D082 return 64/68 ($40/$44): read-sector; DRQ + LOST.
+BANK 0 PEEKs at D000-DFFF instead read RAM, so the initial zero flags
+were a diagnostic-command mistake and do not mean no disk was mounted.
+
+Pinned core bc7a3ece8aaee3d4d9f5df09cd71c70b1225a827, sdcardio.vhdl:
+ReadingSector at lines 3585-3630 sets LOST on another incoming SD byte
+when DRQ is already set, while still writing each byte to the F011 sector
+buffer. ReadingSectorAckByte clears BUSY when all 512 bytes are stored.
+Our image-only reader waits for completion before consuming the buffer.
+Rejecting LOST with the $1C error mask therefore rejects valid buffers.
+The mask is now $18: RNF/CRC are fatal; LOST alone is not. Length, chain,
+load-address and checksum checks still precede the final commit.
+This is not a change for physical-floppy operation, which is unsupported.
+
+Regression: with the core-derived LOST status added to buffered reads,
+the original 0.2.1 binary rejects its first valid sector, without DMA.
+Changing only CPU $60F5 from 28 to 24 lets it load all 16,384 bytes.
+The current diagnostic reader passes the same case; LOST with a checksum
+mismatch fails, and LOST with either RNF or CRC still fails immediately.
+19 harness cases pass, including no program commit on injected failures.
+30 Rust disk/merge/launcher tests pass. The unchanged local WebDAV tests
+are blocked by socket permissions in this session (passed previously).
+
+Temporary RAM test for the ORIGINAL D65DEMO from 0.2.1, after START fails:
+BANK 0:IF PEEK(24821)=28 THEN POKE 24821,24:RUN 100
+Choose 2. Expected BANK 2 OK. This is RAM only; RUN START reinstalls the
+old reader from that old disk, undoing the patch. Do not SAVE it to disk.
+The new 0.2.2 images and app include the permanent builder correction.
+On 14 October 2026, the user confirmed BANK 2 OK on real MEGA65 hardware with ROM 920413 after applying the one-byte RAM correction to the original D65DEMO reader. BANK2 starts at logical track 39/sector 80, beyond the standard D81 sector range. The user subsequently confirmed that the rebuilt D65FULL mounts, DIR lists through EXTRA38, START opens, and choice 38 prints EXTRA PROGRAM 38 OK. This is a successful 40,000-byte program load from the extra sectors of the 1,520,000-byte compilation on real hardware. It does not mean every program was individually run on hardware. On 14 October 2026, the user also confirmed that the rebuilt D65FIX mounts at the root of a second SD card, START opens, and BANK2 runs successfully without a RAM patch on core 0.97.2 / ROM 920413. The original card still gives FF for D65FIX at both ROMS and root, and for the identical TRYFIX copy in ROMS, while D65FULL works there. The failure therefore depends on the card or its filesystem state/handling in these tests; fragmentation and the responsible software component remain unconfirmed. The second-card copy was tested by the user, not independently hashed here.
+
+User report: "yes if I do than then select bank 2 I get bank 2 ok"
+
+
+Capacity hardware report: "d65full gives me a dir of up to extra38 / run start works / extra program 38 ok".
+EXTRA38 starts at logical track 73/sector 84 and has 40,000 PRG bytes.
+Local image SHA-256: 9f7f085590061b816acb67d6939abf3eef9635bd4e62eac7ca767fc519cf5f6b.
+The original SD-card copy was subsequently compared and matches this hash byte-for-byte.

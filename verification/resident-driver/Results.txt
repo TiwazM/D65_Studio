@@ -1,0 +1,37 @@
+D65 Studio 0.3.0 resident reader — 15 October 2026
+
+57 Rust tests: disk/launcher, FAT32 export, merges and WebDAV.
+63 CPU/FDC cases: 42 large PRGs; repeated named reads after old workspace overwrite;
+wrong format/mount, corrupt checksums, cycles, mismatched lengths, invalid tracks,
+controller errors, timeout, invalid command/catalogue/index/name, protected and
+out-of-range destinations, empty files, index 294 and a 295-entry name search.
+The harness checks that graphics banks 4/5 remain unchanged and never issues a
+write-sector command. Its DMA and physical memory are modeled.
+
+Installed Xemu control tests, ROM 920413:
+RESDRV: ROM-loaded START installs reader/catalogue; selected 40,000-byte program
+starts, then calls the reader by name for MESSAGE. STATUS 0 and SECOND READ OK.
+RESMAX: selected 55,041-byte PRG starts. Every one of its 55,039 loaded payload
+bytes matches the original in the emulator's memory dump.
+These exercise Xemu's actual enhanced DMA, Attic memory and FDC implementations.
+Because installed Xemu does not mount D65, controls use D81 files and explicitly
+set the reader's D81 test flag in the control copy of START only. Distributed D65
+images retain flag 0. Extended sectors use the separate CPU/FDC harness.
+
+RESCAP: 42 programs and two support files; 2,310,083 payload bytes plus START.
+All generated images are original test material; no ROM or third-party games
+are included. The release builder also imports the user's ASTRAAMP and GOGO65
+without the old 40 KB rejection; this does not prove game runtime compatibility.
+
+No 0.3.0 physical-MEGA65 result is claimed. Intel Mac binary is cross-compiled,
+not executed on Intel hardware. Existing direct SD writer is unchanged here.
+
+Developer reproduction:
+From the source folder, cargo test --locked; cargo run --example resident_fixture
+-- OUTPUT_DIR produces fixtures including START and its high-memory catalogue.
+Reader: launcher/build-reader.sh /path/to/acme. The checked-in reader.bin removes
+any assembler dependency for normal Rust builds and for end users.
+probe.c links against Xemu cpu65.c and f011_core.c with CPU_65CE02 and CPU65=cpu.
+The retained Python harness scripts record the original workspace layout under
+work/resident-driver and work/xemu-source; adapt paths for another checkout.
+No emulator or Commodore ROM is included. Screen captures are textual dumps.

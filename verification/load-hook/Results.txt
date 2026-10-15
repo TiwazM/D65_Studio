@@ -1,0 +1,60 @@
+D65 Studio 0.3.1 LOAD compatibility — 15 October 2026
+
+PASS: 59 Rust tests. Optional/default mode separation; all 295 imported files
+and all 99 menu slots together with the larger START; preserved data; normal
+START sector geometry; gateway/reader/helper memory-size bounds; existing disk,
+FAT32, WebDAV, merger and resident-driver tests.
+
+PASS: 105 CPU/FDC harness cases. The prior 63 resident cases plus 42 private
+stage-only reads. These cover extended geometry and cross-group chains using
+Xemu's CPU/FDC with modeled DMA and physical memory. Staging compares every
+byte with the original PRG, leaves destination RAM unchanged, and queues no RUN.
+No disk-write commands are issued. This is not a complete hardware simulation.
+
+PASS: Actual Xemu D81 controls with ROM 920413 and its real CPU/DMA/Attic/FDC:
+1. SA1 LOAD from stored PRG address; returned end; Z/decimal flag; exact MAP restore.
+2. SA0 relocated LOAD.
+3. SETBNK bank-1 destination.
+4. Raw LOAD includes the two-byte file header.
+5. VERIFY success and zero-page scratch preservation.
+6. VERIFY mismatch sets READSS bit 4 without modifying destination.
+7. Missing filename gives error 4/carry set.
+8. Protected destination is rejected (error 6).
+9. Unsupported bank is rejected (error 6).
+10. Drive 9 goes to original ROM routine (empty/missing device).
+11. Literal 0: prefix.
+12. Uninstall restores original ILOAD.
+13. Reinstall succeeds.
+14. Normal LOAD still works after reinstall.
+The suite makes actual KERNAL calls, not calls to our custom file API.
+
+PASS: Ordinary BASIC BLOAD"LEVEL",B0,P49152,U8 prints
+BASIC BLOAD SECOND FILE OK. The program has no custom-driver calls.
+
+PASS: Guard rejects a local test copy of ROM 920413 with one altered byte,
+error 129, and keeps the original vector. The supplied original ROM is unchanged.
+PASS: Guard rejects an existing custom LOAD hook, error 130, leaving that vector
+unchanged. Test RAM contains a simple jump to the original LOAD so START loads.
+Neither test changes a real MEGA65 or flashes anything. No ROM is distributed.
+
+Limits: Xemu cannot mount this 5,570,560-byte D65 format correctly. Controls
+contain LEVEL within the first 40 sectors per track and set the D81 test flag
+only in their copy of START. The distributed HOOKBAS and HOOKTEST have LEVEL at
+T1/S40 and T1/S43 respectively, and leave the test flag zero. Those images still
+need hardware confirmation. No arbitrary multi-file game compatibility claimed.
+The direct SD-card writer is unchanged, and no SD card is available this turn.
+
+Developer reproduction
+----------------------
+From the source folder: cargo test --locked.
+Reassemble optional binaries: launcher/build-reader.sh /path/to/acme.
+Normal Rust builds use the checked-in binaries; users need no assembler/tools.
+Assemble suite.a with ACME (-f cbm -o SUITE.prg), or use supplied original PRGs.
+cargo run --example compat_fixture -- OUTPUT_DIR verification/load-hook/SUITE.prg
+creates HOOKLITE.D65 (D81-control geometry) and HOOKTEST.D65 (extended LEVEL).
+Repeat with BASIC.prg for the BASIC pair; rename the full result HOOKBAS.D65.
+The test scripts retain the development workspace layout. Adapt roots for a new
+checkout. xemu-negative.py expects Xemu and a locally supplied ROM, and creates
+only a private test copy. Scripts/PRGs/source are MIT original test material.
+probe.c links with Xemu cpu65.c and f011_core.c with CPU_65CE02 and CPU65=cpu.
+No Xemu, third-party game, memory dump, or ROM is included in this evidence folder.

@@ -1,0 +1,14 @@
+19AEA  9AEA  DA             PHX   
+19AEB  9AEB  A9 46          LDA   #$46
+19AED  9AED  AE 81 11       LDX   $1181
+19AF0  9AF0  E0 09          CPX   #$09
+19AF2  9AF2  F0 02          BEQ   $9AF6
+19AF4  9AF4  A9 40          LDA   #$40
+19AF6  9AF6  8D 40 D6       STA   $D640
+19AF9  9AF9  EA             NOP   
+19AFA  9AFA  FA             PLX   
+19AFB  9AFB  F0 07          BEQ   $9B04
+19AFD  9AFD  B0 05          BCS   $9B04
+19AFF  9AFF  A2 04          LDX   #$04
+19B01  9B01  4C FD 2F       JMP   $2FFD
+19B04  9B04  60             RTS   

@@ -1,0 +1,2 @@
+Release binary rejected non-FAT APFS destination before creating output:
+Choose a folder on your MEGA65 FAT32 SD card. This destination uses apfs, not FAT.

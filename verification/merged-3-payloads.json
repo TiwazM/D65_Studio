@@ -1,0 +1,32 @@
+[
+  {
+    "name": "BANK1",
+    "bytes": 24,
+    "sha256": "a0620647e0da1cd2644babb1d98ce3318523703a8fa70b2eb700e79e988f02ee"
+  },
+  {
+    "name": "PAD1",
+    "bytes": 13000,
+    "sha256": "eb72c80c553637ead303bd499bced0ef41f38daeef45b8076cf36971f2604410"
+  },
+  {
+    "name": "BANK2",
+    "bytes": 24,
+    "sha256": "b9e96dd6220181170bf706d76759cdb17d919e41929c5d7147cc6d799551930b"
+  },
+  {
+    "name": "PAD2",
+    "bytes": 13000,
+    "sha256": "264e051e1f249bd318c8b3a5b8c4068deb031ce31771bf59396a37c7ff7ff401"
+  },
+  {
+    "name": "BANK3",
+    "bytes": 24,
+    "sha256": "5756cfa5d56fc608e369d66619c3927d73329d60ec3db538af02ddf39f2f7273"
+  },
+  {
+    "name": "PAD3",
+    "bytes": 13000,
+    "sha256": "25e15fc9eed83f18688f70bf4656afdb28de311434aa44337f47f65299cd1185"
+  }
+]

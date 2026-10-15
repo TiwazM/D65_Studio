@@ -1,0 +1,35 @@
+Microsoft (R) COFF/PE Dumper Version 14.38.33134.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file ..\..\outputs\D65-Studio-0.3.1-Windows-x64\d65-studio.exe
+
+File Type: EXECUTABLE IMAGE
+
+  Image has the following dependencies:
+
+    kernel32.dll
+    bcryptprimitives.dll
+    user32.dll
+    api-ms-win-core-synch-l1-2-0.dll
+    shlwapi.dll
+    shell32.dll
+    advapi32.dll
+    mpr.dll
+    ole32.dll
+    opengl32.dll
+    gdi32.dll
+    imm32.dll
+    dwmapi.dll
+    uxtheme.dll
+    ws2_32.dll
+    ntdll.dll
+
+  Summary
+
+        4000 .data
+        1000 .fptable
+       1D000 .pdata
+      259000 .rdata
+        4000 .reloc
+      2F5000 .text

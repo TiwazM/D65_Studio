@@ -1,0 +1,43 @@
+D65DIAG: hardware reader diagnosis, 14 October 2026
+
+Hardware now confirms that the corrected directory lists successfully and
+START opens its menu. Selecting BANK2 reports READ FAILED. The precise
+cause remains unknown. D65DIAG.D65 adds diagnostics to the reader; it is
+not a confirmed fix for that failure. The packaged app remains v0.2.1.
+
+Copy D65DIAG.D65 to the SD card, mount in drive 8, RUN"START", choose 2.
+If it fails, record the six values beneath:
+  CODE FDC MOUNT FORMAT TRACK SECTOR (HEX)
+No app installation/update is needed to run this diagnostic image.
+
+Diagnostic mailbox (bank 0):
+$1308 stage code; $1309 FDC status at failure; $130A mount flags D68B;
+$130B format flags D68A; $130C/$130D last requested logical track/sector.
+$1306 remains 0 on success, 2 on failure, preserving the original API.
+Stage and flags are hexadecimal on screen. Data is captured before
+cleanup; logical track/sector are captured before consuming the link.
+
+Stage codes (hex):
+01 mounted D65 flag check; 02 incompatible D64/D71 format flag;
+03 declared size; 04 initial busy timeout; 05 motor spin-up timeout;
+06 track/sector range; 07 geometry busy timeout; 08 buffer-reset timeout;
+09 read timeout; 0A controller RNF/CRC/LOST;
+0B zero final-sector byte count; 0C block exceeds remaining length;
+0D chain termination disagrees with declared length;
+0E first block too short; 0F PRG load address is not $2001;
+10 checksum mismatch; 11 empty staged program.
+
+This instrumentation keeps the previous read algorithm and staged commit.
+It issues no disk write commands. The resident code remains below $1800,
+and the engine remains below $6400. The header comment was corrected to
+BANK 0, matching the existing generated launcher and implementation.
+
+Tests: 30 Rust core tests pass. The CPU/FDC harness passes 15 cases,
+including specific error-code assertions and unchanged program memory
+on injected failures. Installed Xemu D81 controls run BANK2 successfully
+with explicit test mode, and show the six diagnostic values for a forced
+D65 flag failure with production mode. No full D65 hardware success is
+claimed. Xemu's spin-up command completes immediately, whereas the pinned
+hardware source models a 1-second delay; a 40.5-MHz cycle-based probe
+completed that delay within the current wait budget, so no timing fix
+was inferred from that difference.

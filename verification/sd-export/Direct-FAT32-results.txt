@@ -1,0 +1,24 @@
+D65 Studio 0.2.5 — direct FAT32 export verification
+
+49 Rust tests passed: 17 library, 20 disk, 8 direct FAT32, 4 merge.
+The direct writer was exercised on sparse modeled FAT32 media and a real
+disposable partition-image file (268,932,096 bytes logical size). D65 and
+D81 were exported sequentially into this file, using native file seek,
+read, write and sync operations. macOS fsck_msdos -n -f returned 0 with
+no repair requests; the report is Direct-FAT32-fsck.txt.
+
+Checks include consecutive allocation after fragmented/occupied clusters,
+both FAT copies, every file byte, existing-file preservation, dirty/mismatched
+FAT refusal, referenced-free clusters, cross-links, cycles, no consecutive
+space, full root, malformed FSInfo, unsupported geometry, duplicate short
+and long names, directory-sector boundary handling, journal failure,
+write failures at each metadata boundary, data read-back corruption,
+persistent write failure, and flush failures. Native plutil parsing and
+durable journal serialization were exercised. Earlier launcher/disk tests
+still pass; no launcher binary or payload format change was made.
+
+Limitations: the administrator prompt, external disk identification,
+unmount/exclusive raw-device access, descriptor ioctls and remount were not
+run end-to-end on a physical card. No SD-card contents were changed during
+this implementation. Physical MEGA65 mounting of a directly exported file
+remains untested. Intel is compiled, not executed.

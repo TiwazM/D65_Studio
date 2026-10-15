@@ -1,0 +1,126 @@
+old-DEMO-dir {$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}       THE MEGA65 PERSONAL COMPUTER SYSTEM
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}        (C) 2021 MEGA, 1991 COMMODORE, 1977 MICROSOFT
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}                BASIC 65 V920413 14-OCT-2026 19:14:21
+
+READY. <$2001-$202D,45 BYTES>
+ DIR:
+
+66,ILLEGAL TRACK OR SECTOR,40,43
+
+READY.
+{$A0}
+
+old-DEMO-load {$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}       THE MEGA65 PERSONAL COMPUTER SYSTEM
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}        (C) 2021 MEGA, 1991 COMMODORE, 1977 MICROSOFT
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}                BASIC 65 V920413 14-OCT-2026 19:14:29
+
+READY. <$2001-$202D,45 BYTES>
+ LOAD"START",8:
+
+66,ILLEGAL TRACK OR SECTOR,40,43
+
+READY.
+
+new-DEMO-dir {$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}       THE MEGA65 PERSONAL COMPUTER SYSTEM
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}        (C) 2021 MEGA, 1991 COMMODORE, 1977 MICROSOFT
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}                BASIC 65 V920413 14-OCT-2026 19:14:37
+
+READY. <$2001-$202D,45 BYTES>
+ DIR:
+   0 {$A2}{$84}{$B6}{$B5}{$A0}{shdi}{$81}{f10}{text}{stop}{$88}{$A0}{$84}{ht}{home}{shen}{$A0}{$A2}{$A0}{$B6}{$B5}{$A0}{$B1}{$84}
+  16 "START"            PRG
+   1 "BANK1"            PRG
+  52 "PAD1"             USR
+   1 "BANK2"            PRG
+  52 "PAD2"             USR
+3144 BLOCKS FREE
+
+READY.
+
+new-DEMO-load {$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}       THE MEGA65 PERSONAL COMPUTER SYSTEM
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}        (C) 2021 MEGA, 1991 COMMODORE, 1977 MICROSOFT
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}                BASIC 65 V920413 14-OCT-2026 19:14:45
+
+READY. <$2001-$202D,45 BYTES>
+ LOAD"START",8:
+
+LOADING START
+READY.
+
+new-CAPACITY-dir  158 "EXTRA18"          PRG
+ 158 "EXTRA19"          PRG
+ 158 "EXTRA20"          PRG
+ 158 "EXTRA21"          PRG
+ 158 "EXTRA22"          PRG
+ 158 "EXTRA23"          PRG
+ 158 "EXTRA24"          PRG
+ 158 "EXTRA25"          PRG
+ 158 "EXTRA26"          PRG
+ 158 "EXTRA27"          PRG
+ 158 "EXTRA28"          PRG
+ 158 "EXTRA29"          PRG
+ 158 "EXTRA30"          PRG
+ 158 "EXTRA31"          PRG
+ 158 "EXTRA32"          PRG
+ 158 "EXTRA33"          PRG
+ 158 "EXTRA34"          PRG
+ 158 "EXTRA35"          PRG
+ 158 "EXTRA36"          PRG
+ 158 "EXTRA37"          PRG
+ 158 "EXTRA38"          PRG
+3127 BLOCKS FREE
+
+READY.
+{$A0}
+
+new-CAPACITY-load {$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}       THE MEGA65 PERSONAL COMPUTER SYSTEM
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}        (C) 2021 MEGA, 1991 COMMODORE, 1977 MICROSOFT
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}                BASIC 65 V920413 14-OCT-2026 19:15:02
+
+READY. <$2001-$202D,45 BYTES>
+ LOAD"START",8:
+
+LOADING START
+READY.
+
+new-CAPACITY-run {$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}                BASIC 65 V920413 14-OCT-2026 19:15:10
+
+READY. <$2001-$202D,45 BYTES>
+ RUN"START":
+
+LOADING 0:START
+D65 STUDIO - DIRECT DISK READER
+DRIVE 8 / SELF-CONTAINED MEGA65 PROGRAMS
+1  EXTRA01
+2  EXTRA02
+3  EXTRA03
+4  EXTRA04
+5  EXTRA05
+6  EXTRA06
+7  EXTRA07
+8  EXTRA08
+9  EXTRA09
+10  EXTRA10
+11  EXTRA11
+12  EXTRA12
+13  EXTRA13
+14  EXTRA14
+15  EXTRA15
+16  EXTRA16
+NUMBER (0 NEXT PAGE, -1 QUIT)? {$A0}
+

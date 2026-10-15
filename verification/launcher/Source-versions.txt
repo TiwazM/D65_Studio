@@ -1,0 +1,5 @@
+ACME: 99fae48b1fc44a3fc25b84d51857d36c1d6967e1
+Xemu CPU/FDC: 40dfef0d1d5f56be2469492715c12bdb32c75b67
+Installed Xemu: f0a711c5a46f49929132ac2272d564cd143d68e6
+ROM: 920413
+Raw test scripts retain workspace-relative paths; see Reader-notes.txt for their scope.

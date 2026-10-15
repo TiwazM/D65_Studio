@@ -1,0 +1,10 @@
+D65 Studio 0.2.4, 14 October 2026
+
+39 Rust tests passed (15 library, 20 disk, 4 merge).
+New tests cover importing 38 separate 40,000-byte PRGs, unchanged sources,
+raw PETSCII filenames, locked flags, SEQ data, conflicts and capacity rejection.
+Release CLI successfully built from BANK1/BANK2/BANK3 D81s. An independent
+Python chain reader verified all source file bytes in the exported D65 and
+confirmed directory links remain in track 40 sectors below 40.
+Existing one/two-source build behavior and reader binary remain unchanged.
+Automatic multi-source packing has not yet been run on real hardware.

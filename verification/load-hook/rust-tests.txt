@@ -1,0 +1,103 @@
+   Compiling d65-studio v0.3.1 (/Users/hanffs/Documents/Codex/2026-10-14/hi/outputs/d65-studio)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.41s
+     Running unittests src/lib.rs (work/rust-target/debug/deps/d65_studio-770981f3c33561f6)
+
+running 22 tests
+test direct_sd::tests::validates_devices_and_quotes_without_shell_expansion ... ok
+test direct_sd::tests::reads_live_kernel_mount_table_without_disk_management_service ... ok
+test launcher::compatibility_tests::rejects_unsupported_programs_and_reserved_name ... ok
+test launcher::compatibility_tests::preserves_files_and_accepts_maximum_prg ... ok
+test launcher::compatibility_tests::packing_preserves_raw_names_flags_and_data_files ... ok
+test launcher::tests::reader_fits_reserved_ram ... ok
+test launcher::tests::rejects_bad_basic_pointers ... ok
+test launcher::tests::launcher_reclaims_standard_space ... ok
+test launcher::directory_tests::directory_stays_in_rom_geometry_and_payloads_reclaim_standard_space ... ok
+test launcher::tests::compatibility_is_optional_and_fits_reserved_memory ... ok
+test sd_export::tests::readback_detects_corruption_and_truncation ... ok
+test sd_export::tests::sd_names_are_short_uppercase_with_correct_extension ... ok
+test launcher::compatibility_tests::packing_rejects_conflicts_and_over_capacity ... ok
+test sd_export::tests::exact_export_with_adjacent_extent_responses ... ok
+test sd_export::tests::existing_files_and_publish_races_are_not_overwritten ... ok
+test sd_export::tests::unsupported_layout_is_explicitly_unverified ... ok
+test launcher::compatibility_tests::imports_many_disks_and_preserves_every_file_and_source ... ok
+test sd_export::tests::failed_exports_leave_no_image_or_temporary_file ... ok
+test direct_sd::tests::native_plist_fields_and_journal_are_roundtrippable ... ok
+test launcher::compatibility_tests::supports_full_catalogue_and_retains_large_data ... ok
+test launcher::tests::compatibility_supports_largest_menu_and_catalogue ... ok
+test direct_sd::tests::diskutil_schema_uses_whole_disk_without_mounted_or_whole_keys ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+     Running unittests src/main.rs (work/rust-target/debug/deps/d65_studio-d2469c087ed28531)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/disk.rs (work/rust-target/debug/deps/disk-ce901f4f84d73f00)
+
+running 20 tests
+test directory_cycle_detection ... ok
+test bam_corruption_blocks_edits ... ok
+test geometry_and_bam ... ok
+test cycle_detection ... ok
+test extended_chains_are_readable_but_not_writable ... ok
+test failed_replacement_keeps_original ... ok
+test crosslinks_block_edits ... ok
+test invalid_terminal_count_rejected ... ok
+test malformed_size_never_guessed ... ok
+test reject_duplicate_and_invalid_names ... ok
+test rename_delete_and_reuse ... ok
+test unsupported_types_block_edits ... ok
+test independent_freezer_fixture ... ok
+test disk_full_is_transactional ... ok
+test conversion_does_not_discard_unknown_data ... ok
+test new_never_overwrites ... ok
+test full_image_conversion_is_lossless ... ok
+test block_boundaries_roundtrip ... ok
+test lock_backup_external_change ... ok
+test grows_directory_and_preserves_links ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+     Running tests/fat_export.rs (work/rust-target/debug/deps/fat_export-7c2ffee14f718abf)
+
+running 8 tests
+test writes_a_sparse_fixture_for_external_filesystem_check ... ok
+test journal_failure_prevents_all_writes ... ok
+test preflight_failures_never_write ... ok
+test corruption_is_detected_and_persistent_failures_require_recovery ... ok
+test handles_directory_sector_boundary_and_rejects_long_name_collision ... ok
+test chooses_a_consecutive_run_and_preserves_existing_files ... ok
+test flush_failures_restore_metadata ... ok
+test interrupted_writes_restore_metadata_and_do_not_publish ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+     Running tests/merge.rs (work/rust-target/debug/deps/merge-cde31ccadcafb63e)
+
+running 4 tests
+test empty_source_banks_keep_directory_connected ... ok
+test reject_conflicts_corruption_types_and_out_of_bounds_bank_count ... ok
+test multi_sector_directories_and_terminal_counts ... ok
+test three_full_disks_independent_roundtrip ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/webdav.rs (work/rust-target/debug/deps/webdav-0ac3ab42ea573f65)
+
+running 5 tests
+test read_only_and_invalid_names ... ok
+test merged_images_are_readable_only ... ok
+test special_names_and_replace ... ok
+test full_disk_move_and_failed_copy ... ok
+test dav_roundtrip_and_metadata ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+   Doc-tests d65_studio
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

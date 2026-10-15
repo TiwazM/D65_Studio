@@ -1,0 +1,17 @@
+D65 Studio 0.2.1 directory correction
+
+ROM 920413 in installed Xemu reproduced error 66 at 40,43 for DIR and
+LOAD START on the old DEMO first-bank control. Corrected DEMO and CAPACITY
+controls list without errors and load byte-identical START payloads.
+RUN START on the corrected CAPACITY control reaches its interactive menu.
+These controls copy logical sectors 0-39 of each D65 track unchanged into
+a D81 file; installed Xemu cannot mount the complete D65.
+
+All 38 updated D65FULL payloads independently matched their originals and
+passed the CPU/FDC harness, whose D65 disk and DMA backends are modeled.
+30 current Rust core tests pass. The full-suite log includes five local
+socket permission failures for WebDAV in this sandbox; those unchanged
+tests passed in the previous release.
+
+The separate hardware Freezer FF mount error remains unresolved.
+Full real-hardware D65 launcher success remains unverified.

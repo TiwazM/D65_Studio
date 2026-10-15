@@ -1,0 +1,166 @@
+WARNING: Warning: cannot create symlink Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/ to /Users/hanffs/.xemu-lgb: Operation not permitted
+ERROR: Cannot create accelerated SDL renderer: Couldn't find matching render driver
+INFO: Created non-accelerated driver. NOTE: it will severly affect the performance!
+**** The Evolving MEGA65 emulator from LGB ****
+This software is part of the Xemu project: https://github.com/lgblgblgb/xemu
+CREATED: runner@sjc20-cw757-8d6cd15e-38e9-403a-bd97-96c43a7c44b6-DE068DC466AC.local on Darwin 24.6.0 at Sun Oct 11 18:13:52 UTC 2026
+CREATED: clang Apple LLVM 17.0.0 (clang-1700.0.13.5) 64LE for osx
+VERSION: https://github.com/lgblgblgb/xemu next f0a711c5a46f49929132ac2272d564cd143d68e6 20261011194536 official-build
+EMULATE: MEGA65 (mega65): xmega65 (../../build/bin/xmega65.native) for mega65 on osx (native) using cc
+LICENSE: Copyright (C)2016-2026 Gábor Lénárt (aka LGB) lgb@lgb.hu http://lgb.hu/
+LICENSE: This software is a GNU/GPL version 2 (or later) software.
+LICENSE: <http://gnu.org/licenses/gpl.html>
+LICENSE: This is free software; you are free to change and redistribute it.
+LICENSE: There is NO WARRANTY, to the extent permitted by law.
+
+FILE: file @mega65-default.cfg opened as /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/mega65-default.cfg with base mode-set as fd=3
+FILE: 266 bytes loaded from file: /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/mega65-default.cfg
+CFG: Default config file @mega65-default.cfg has been used
+CFG: CLI parsing is done without error.
+FILE: file @mega65-template.cfg.TMP opened as /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/mega65-template.cfg.TMP with base mode-set as fd=3
+FILE: 9079 bytes saved into file: @mega65-template.cfg.TMP
+FILE: renaming file: /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/mega65-template.cfg.TMP -> /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/mega65-template.cfg
+XEMU: emulated MEGA65 model ID: $03
+INSTALLER: not activated.
+Logging is disabled at compile-time.
+Logging into file: not enabled.
+XEMU: setting up environment variable: SDL_VIDEODRIVER=dummy
+XEMU: setting up environment variable: SDL_AUDIODRIVER=dummy
+SDL: no SDL subsystem initialization has been done yet, do it!
+SDL version: (SDL-release-2.32.10-0-g5d2495703) compiled with 2.32.10, used with 2.32.10 on platform Mac OS X
+SDL system info: 64 bits LE, 10 cores, l1_line=128, RAM=65536Mbytes, max_alignment=8, CPU features: 3DNow=0 AVX=0 AVX2=0 AltiVec=0 MMX=0 RDTSC=0 SSE=0 SSE2=0 SSE3=0 SSE41=0 SSE42=0
+SDL drivers: video = dummy (1024x768), audio = dummy
+TIMING: sleep = nanosleep, query = SDL_GetPerformanceCounter
+SDL preferences directory: /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/
+SDL: opening window at (536805376,536805376) with size of (705,576)
+SDL window native pixel format: SDL_PIXELFORMAT_RGB888
+SDL renderer driver #0: "metal"
+SDL renderer driver #1: "opengl"
+SDL renderer driver #2: "opengles2"
+SDL renderer driver #3: "software"
+SDL renderer used: "software" max_tex=0x0 tex_formats=8 (ARGB8888 ABGR8888 RGBA8888 BGRA8888 RGB888 BGR888 RGB565 RGB555)
+SDL: creating main texture 800 x 625
+
+GUI: forcing "none" because of headless mode
+GUI: using "none" (Not using GUI - the null GUI :))
+FILE: file @keymap-default.cfg opened as /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/keymap-default.cfg with base mode-set as fd=3
+HID: 97 key bindings has been added as the default built-in configuration
+FILE: @keymap.cfg cannot be open, tried path(s):  /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/keymap.cfg
+HID: cannot open keymap user config file (maybe does not exist), ignoring: @keymap.cfg
+MEM: memory decoder initialized, 384K fast, 8192K attic, 32K colour, 8K font RAM
+FILE: file @i2c.bin opened as /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/i2c.bin with base mode-set as fd=3
+FILE: 4096 bytes loaded from file: /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/i2c.bin
+MEMCONTENT: "extfreezer" (Freezer) was not requested, using the built-in ($607C bytes) [b8601942ea6bdd7d7b519daca9c30dc214192832].
+MEMCONTENT: "extinitrom" (Initial boot-ROM) was not requested, using the built-in ($20000 bytes) [bbdfca752a6e7b81fbbf70c5555444d82fad8af7].
+MEMCONTENT: "extonboard" (On-boarding utility) was not requested, using the built-in ($3071 bytes) [0a567fc9ee619057d9331d032ba4b2886c6b0e34].
+MEMCONTENT: "extflashutil" (MEGA-flash utility) was not requested, using the built-in ($27 bytes) [af0ac0ad99f6fe9110e86d7cd3faf0d7c28405c1].
+MEMCONTENT: "extbanner" (MEGA65 banner) was not requested, using the built-in ($5300 bytes) [0b2550f9f11eeb6df61312fb6c52601df3ba0fed].
+MEMCONTENT: "extchrwom" (Character-WOM) was not requested, using the built-in ($1000 bytes) [466e399a5e994b52f6cef6019b32b9f6b504cd14].
+MEMCONTENT: "extcramutils" (Utils in CRAM) was not requested, using the built-in ($8000 bytes) [22f43dce36ca00db04d334e9d38eb78f5a77a2af].
+MEMCONTENT: "hickup" (Hyppo-Hickup) was not requested, using the built-in ($4000 bytes) [c30056db4e3ef8265520269cb1dc3c9cba9e26f8].
+HYPERVISOR: disabling debug ability: no external hickup is loaded, built-in one does not have debug info
+D81: initial subsystem reset
+SDCARD: configuring F011 FDC (#0) with have_disk=0, can_write=1, image_size=0, d81_access="D81"(M:0,A=$00,B=$00)
+SDCARD: configuring F011 FDC (#1) with have_disk=0, can_write=1, image_size=0, d81_access="D81"(M:0,A=$00,B=$00)
+FILE: file @mega65.img opened as /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/mega65.img with base mode-set as fd=3
+SDCARD: image is not compressed
+SDCARD: card init done, size=4096 Mbytes (R/W), virtsd_mode=image-file, default_D81_from_sd=0
+SDCARD: external mount pool is #8388608...8399487 (card size: 8388608)
+SDCARD: check Xemu signature (@block 2): disk=3 this_xemu=3
+HW_ERRATA: 255 -> 0 (wanted: 0, xemu-max: 2) [RESET]
+VIC: errata level is set 0: d016_delta=2, char_attr_buggy=1
+VIC4: writing $D030 in VIC2 I/O mode with data $00 @ PC=$0000 (hypervisor mode: 0)
+VIC4: setting PAL mode (by emulator initalization)
+DMA: initializing DMA engine for chip revision 1 (initially, may be modified later!), modulo_support=DISABLED.
+SPEED: fast clock is set to 40.50MHz.
+CPU[65CE02]: RESET, PC=FCE2, BCD_behaviour=NMOS-6502
+HDOS: initialization with do_virt=0 and virtroot="<NULL>"
+HDOS: reset
+HDOS: virtualization is DISABLED, root = "/Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/hdos/"
+HYPERVISOR: HYPPO version "HEAD,20250618.10,aaf4542~" (built-in) starting with TRAP reset (#$40)
+HDOS: system-start-begin notification received.
+HDOS: reset
+HYPERVISOR: setting video standard change (PAL/NTSC) banning
+SPEED: in_hypervisor=1 force_fast=0 c128_fast=0, c65_fast=0 m65_fast=0
+OSK: ready, 800x600 pixel texture
+OSK: v-keyboard dimension: 160x5, 77 keys, map scaling = 5.000000, key height = 48px
+AUDIO: emu-setup [reset-mixer] event; emu-volume = 100%, mono-downmix = off, output-reg-shift = $00
+AUDIO: reset for 4 SIDs (1000000 cycles per sec) and 1 OPL3 chip for 44100Hz sampling rate.
+AUDIO: clearing audio related registers.
+AUDIO: initialized (#2), 44100 Hz, 2 channels, 1024 buffer sample size.
+MEM: UNHANDLED memory policy: 0
+UMON: not enabled
+FILE: file /Users/hanffs/Documents/Codex/2026-10-14/hi/work/dummy.prg opened as /Users/hanffs/Documents/Codex/2026-10-14/hi/work/dummy.prg with base mode-set as fd=5
+FILE: 47 bytes loaded from file: /Users/hanffs/Documents/Codex/2026-10-14/hi/work/dummy.prg
+INJECT: prepare for C65 mode, BASIC (RUNable) program, $2001 load address, 45 bytes from file: /Users/hanffs/Documents/Codex/2026-10-14/hi/work/dummy.prg
+INJECT: registering 'READY.' event: PRG memory injection
+INJECT: READY. has been invalidated 0 times (40x25@$0)
+ROM: unsetting custom ROM (clear request)
+AUDIO: start mixing.
+VIC4: switching video standard from <UNDEF> to PAL (1MHz line cycle count is 32.000000, CIA ticks per scanline is 31.447115, frame time is 20000usec, max raster is 624, visible area height is 576)
+ETH: reset-begin established, PC=$A4AE
+ETH: reset-end established, PC=$A4B3
+ETH: warning, CPU wants to move over the current ethernet RX buffer! PC=$A4B6
+VIC4: warning: I/O mode KEY $D02F register wanted to be written (with $47) in hypervisor mode! PC=$FB44
+VIC4: warning: I/O mode KEY $D02F register wanted to be written (with $53) in hypervisor mode! PC=$FB49
+VIC4: warning: I/O mode KEY $D02F register wanted to be written (with $C0) in hypervisor mode! PC=$EDC1
+AUDIO: callback switches to silent mode.
+VIC4: warning: I/O mode KEY $D02F register wanted to be written (with $47) in hypervisor mode! PC=$0816
+VIC4: warning: I/O mode KEY $D02F register wanted to be written (with $53) in hypervisor mode! PC=$081B
+SDL: no auto-resizing was needed (same size)
+ETH: MAC address modification (byte #5) from $65 to $25 at PC=$84EB
+ETH: MAC address modification (byte #4) from $65 to $12 at PC=$84EB
+ETH: MAC address modification (byte #3) from $65 to $6E at PC=$84EB
+ETH: MAC address modification (byte #2) from $53 to $27 at PC=$84EB
+ETH: MAC address modification (byte #1) from $47 to $D1 at PC=$84EB
+ETH: MAC address modification (byte #0) from $02 to $92 at PC=$84EB
+MEGA65: ROM protection has been turned ON.
+HYPERVISOR: first return after RESET, start of processing workarounds.
+FILE: file @MEGA65.ROM opened as /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/MEGA65.ROM with base mode-set as fd=5
+FILE: 131072 bytes loaded from file: /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/MEGA65.ROM
+ROM: using 'ROM from prefdir' policy for default ROM, ROM is from file /Users/hanffs/Documents/Codex/2026-10-14/hi/work/D65 Xemu Check.app/Contents/Resources/mega65/MEGA65.ROM
+ROM: force ROM re-apply policy, PC change: $E4B8 -> $E4B8
+ROM: SHA1 checksum is 4214ba4615a6ad852ddfc48b51a1d0ceca34a622
+ROM: Closed-ROMs detected with version 920413
+DMA: default DMA chip revision change 1 -> 1 based on ROM version (920413 Closed-ROMs)
+VIC4: setting PAL mode (in hypervisor.c, requested as boot/reset default)
+HDOS: system-start-end notification recevied.
+SDCARD: MOUNT: default SD-internal image for unit #0 is at sector #11552 (D81)
+SDCARD: MOUNT: default SD-internal image for unit #1 could not be determined
+SDCARD: MOUNT: sdcard_external_mount(0, "/Users/hanffs/Documents/Codex/2026-10-14/hi/outputs/d65-studio/Images/TEST-D81.d81", "Mount failure on CLI/CFG requested drive-8");
+SDCARD: MOUNT: external mount #0 from file /Users/hanffs/Documents/Codex/2026-10-14/hi/outputs/d65-studio/Images/TEST-D81.d81 (R/W)
+FILE: file /Users/hanffs/Documents/Codex/2026-10-14/hi/outputs/d65-studio/Images/TEST-D81.d81 opened as /Users/hanffs/Documents/Codex/2026-10-14/hi/outputs/d65-studio/Images/TEST-D81.d81 with base mode-set as fd=5
+D81: fd 5 has been attached to #0 with 0 offset, read_only = 0, autoclose = 1, size = 819200
+SDCARD: configuring F011 FDC (#0) with have_disk=1, can_write=1, image_size=819200, d81_access="D81"(M:0,A=$00,B=$03)
+AUDIO: emu-setup [reset-mixer] event; emu-volume = 100%, mono-downmix = off, output-reg-shift = $00
+HYPERVISOR: first return after RESET, end of processing workarounds.
+HYPERVISOR: clearing video standard change (PAL/NTSC) banning
+INJECT: hit 'READY.' trigger, about to inject 45 bytes from $2001.
+INJECT: prgtest: overridding startup sequence to "dir:run"hello":"
+INJECT: pressing key RETURN
+INJECT: registering 'READY.' event: Exit on ready
+INJECT: READY. has been invalidated 1 times (80x25@$800)
+FDC: warning: SWAP bit emulation is experimental! There will be no further warnings on this.
+INJECT: releasing key #1
+INJECT: Exiting because of -prgexit and READY prompt hit.
+D81: previous file descriptor (5) closed because of auto-close policy
+SDCARD: configuring F011 FDC (#0) with have_disk=0, can_write=1, image_size=0, d81_access="D81"(M:0,A=$00,B=$00)
+SDCARD: configuring F011 FDC (#1) with have_disk=0, can_write=1, image_size=0, d81_access="D81"(M:0,A=$00,B=$00)
+XEMU: shutdown callback is running
+XEMU: handling pending screenshot request
+VIC4: forced open frame
+FILE: file /Users/hanffs/Documents/Codex/2026-10-14/hi/work/xemu-d81.png.TMP opened as /Users/hanffs/Documents/Codex/2026-10-14/hi/work/xemu-d81.png.TMP with base mode-set as fd=3
+FILE: 2796 bytes saved into file: /Users/hanffs/Documents/Codex/2026-10-14/hi/work/xemu-d81.png.TMP
+FILE: renaming file: /Users/hanffs/Documents/Codex/2026-10-14/hi/work/xemu-d81.png.TMP -> /Users/hanffs/Documents/Codex/2026-10-14/hi/work/xemu-d81.png
+SCREENSHOT: (800x625 -> 800x625) successfully saved as /Users/hanffs/Documents/Codex/2026-10-14/hi/work/xemu-d81.png
+OSD: xemu-d81.png
+VIC4: 624 forced scanline updates to reach end of frame
+ETH: shutting down: handler thread seems hasn't been even running (not enabled?)
+FILE: file /Users/hanffs/Documents/Codex/2026-10-14/hi/work/xemu-d81-screen.txt.TMP opened as /Users/hanffs/Documents/Codex/2026-10-14/hi/work/xemu-d81-screen.txt.TMP with base mode-set as fd=3
+FILE: 875 bytes saved into file: /Users/hanffs/Documents/Codex/2026-10-14/hi/work/xemu-d81-screen.txt.TMP
+FILE: renaming file: /Users/hanffs/Documents/Codex/2026-10-14/hi/work/xemu-d81-screen.txt.TMP -> /Users/hanffs/Documents/Codex/2026-10-14/hi/work/xemu-d81-screen.txt
+SERIALTCP: not running, nothing to shut down
+CPU: Execution ended at PC=$E1F4 (linear=$003E1F4)
+
+TIMING: Xemu CPU usage: avg=15.82%, min=8%, max=22% (103 counts), uptime=00:02
+XEMU: good by(T)e.

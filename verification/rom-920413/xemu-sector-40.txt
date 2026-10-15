@@ -1,0 +1,17 @@
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}       THE MEGA65 PERSONAL COMPUTER SYSTEM
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}        (C) 2021 MEGA, 1991 COMMODORE, 1977 MICROSOFT
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}
+{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$A0}{$69}                BASIC 65 V920413 14-OCT-2026 15:15:01
+
+READY  <$2001-$202D,45 BYTES>
+ DIR:RUN"PROBE":
+   0 {$A2}{$84}{$B6}{$B5}{$A0}{home}{del}{f10}{$84}{ht}{flon}{$A0}{del}{wht}{home}{del}{$A0}{$A2}{$A0}{$B6}{$B5}{$A0}{$B1}{$84}
+   1 "PROBE"            PRG
+3159 BLOCKS FREE
+
+66,ILLEGAL TRACK OR SECTOR,01,40
+
+READY.
+{$A0}

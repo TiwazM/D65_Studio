@@ -1,0 +1,24 @@
+ROM 920413 targeted execution using Xemu 65CE02 CPU core; flat test RAM and synthetic I/O registers. Not a full-machine hardware test.
+D65 flag=0: format selector $76 remains 0 (D81-family path).
+D65 flag=0: sector I/O request T1/S39 -> passes initial validation at $95B6
+D65 flag=0: sector I/O request T1/S40 -> rejected, next instruction loads error $66 at $9845
+D65 flag=0: sector I/O request T1/S79 -> rejected, next instruction loads error $66 at $9845
+D65 flag=0: sector I/O request T1/S80 -> rejected, next instruction loads error $66 at $9845
+D65 flag=0: sector I/O request T1/S119 -> rejected, next instruction loads error $66 at $9845
+D65 flag=0: allocation scan starting at S39 returns A=$80 (free sector found).
+D65 flag=0: allocation scan starting at S40 returns A=$00 (none).
+D65 flag=1: format selector $76 remains 0 (D81-family path).
+D65 flag=1: sector I/O request T1/S39 -> passes initial validation at $95B6
+D65 flag=1: sector I/O request T1/S40 -> rejected, next instruction loads error $66 at $9845
+D65 flag=1: sector I/O request T1/S79 -> rejected, next instruction loads error $66 at $9845
+D65 flag=1: sector I/O request T1/S80 -> rejected, next instruction loads error $66 at $9845
+D65 flag=1: sector I/O request T1/S119 -> rejected, next instruction loads error $66 at $9845
+D65 flag=1: allocation scan starting at S39 returns A=$80 (free sector found).
+D65 flag=1: allocation scan starting at S40 returns A=$00 (none).
+BAM count pointer for track 1: $1810
+BAM count pointer for track 2: $1816
+BAM count pointer for track 40: $18FA
+BAM count pointer for track 41: $1910
+BAM count pointer for track 80: $19FA
+Unbounded bitmap helper for T1/S40 reads $1816, which is track 2's free-count byte, not an extra bitmap.
+All probe assertions passed. ROM bytes unchanged.

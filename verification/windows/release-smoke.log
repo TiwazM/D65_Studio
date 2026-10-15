@@ -1,0 +1,15 @@
+PASS CLI create:  
+PASS CLI add:  
+PASS CLI list: SMOKE TEST [65] 5570560 bytes
+    1 HELLO            PRG
+3159 blocks free 
+PASS CLI add:  A file with this name already exists.
+PASS CLI convert:  
+PASS CLI convert:  
+PASS CLI export-sd:  Choose a drive-letter root such as E:\ and a NEW uppercase 8.3 filename. Subfolders, network paths and mounted folders are refused.
+PASS CLI launch-compat: Resident launch disk created. RUN "START" from drive 8. About 2.4 MB minus START; 55,041-byte program limit. New reader: hardware validation pending. 
+PASS release binary: Unicode/spaced paths, create, import, list, duplicate refusal, lossless conversion, unsafe SD-path refusal, LOAD-compatible compilation.
+PASS CLI create:  
+PASS independent FAT reader: NEW     D65, 5570560 bytes, 1360 consecutive clusters starting at 3, matching FATs and exact payload.
+PASS CLI create:  
+PASS independent FAT reader: CHECK   D81, 819200 bytes, 200 consecutive clusters starting at 1363, matching FATs and exact payload.

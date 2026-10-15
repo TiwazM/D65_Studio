@@ -1,0 +1,33 @@
+MEGA65 SD-card mount check — 14 October 2026
+
+Card: /Volumes/MEGA65FDISK, ROMS directory. Mounted as msdos via FSKit.
+User reports core 0.97.2. The ROM SHA-256 matches supplied ROM 920413.
+The card's FREEZER.M65 matches the supplied 0.97.2 release byte-for-byte.
+
+D65FIX.D65: 5,570,560 bytes, exact match with generated original.
+SHA256 2d4eb9da792b695fe8e01c57f4cfd82b0ace44ada8189f6187892b5d848429d4
+D65FULL.D65: 5,570,560 bytes, exact match with generated original.
+SHA256 9f7f085590061b816acb67d6939abf3eef9635bd4e62eac7ca767fc519cf5f6b
+
+D65FIX still fails with FF on hardware; D65FULL lists all 38 entries,
+loads START, and runs EXTRA38 (40,000 PRG bytes) successfully.
+This rules out truncation or byte corruption during those copies.
+
+Read-only inspection limits:
+- diskutil cannot access DiskManagement from this session.
+- Reading /dev/rdisk4s1 is denied by OS permissions.
+- F_LOG2PHYS_EXT on the two files returns Operation not supported.
+- statvfs reports 4096-byte allocation units; this is not a raw BPB check.
+Actual FAT cluster chains have not been inspected, so fragmentation has
+not been confirmed or excluded. The SD card was not modified.
+
+The release-0.97.2 dos.asm source was read through the browser:
+https://raw.githubusercontent.com/MEGA65/mega65-core/release-0.97.2/src/hyppo/dos.asm
+Its mount path checks filesystem lookup, cluster contiguity and length;
+it does not parse the Commodore directory or program data before attach.
+It has separate error paths for wrong length and fragmentation. The
+precise FF cause remains undiagnosed; no claim that those errors equal FF.
+
+On 14 October 2026, the user also confirmed that the rebuilt D65FIX mounts at the root of a second SD card, START opens, and BANK2 runs successfully without a RAM patch on core 0.97.2 / ROM 920413. The original card still gives FF for D65FIX at both ROMS and root, and for the identical TRYFIX copy in ROMS, while D65FULL works there. The failure therefore depends on the card or its filesystem state/handling in these tests; fragmentation and the responsible software component remain unconfirmed. The second-card copy was tested by the user, not independently hashed here.
+
+No files on either SD card were modified by the assistant.

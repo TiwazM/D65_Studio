@@ -1,0 +1,7 @@
+Same-format export correction, macOS build 6
+
+30 Rust disk/merge/launcher tests pass. The full three-bank fixture now
+checks byte-identical D65 export while D81 conversion and edits stay blocked.
+The release executable exported the user LAUNCH.d65 byte-for-byte to a
+temporary file and rejected D81 conversion without producing output.
+The original Downloads file was read only and remains unchanged.

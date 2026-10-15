@@ -1,0 +1,97 @@
+; Optional LOAD hook gateway. Original MIT code. All state in reserved utility RAM.
+!cpu 4502
+* = $1c40
+    jmp load_entry
+    jmp install_entry
+    jmp uninstall_entry
+load_entry:
+    sta $1e86
+    stx $1e87
+    sty $1e88
+    lda #0
+    bra enter_mode
+install_entry:
+    lda #1
+    bra enter_mode
+uninstall_entry:
+    lda #2
+enter_mode:
+    sta $1e8e
+    php
+    sei
+    cld
+    phz
+    tba
+    pha
+    lda #0
+    tab
+    lda #1
+    sta $1e8d
+    lda #5
+    sta $1e89
+    ; Save the exact map, including megabyte selectors, before mapping code.
+    ldy #$1d
+    lda #$74
+    sta $d640
+    clv
+    bcc return_regs
+    ldx #5
+save_map:
+    lda $1d00,x
+    sta $1e80,x
+    dex
+    bpl save_map
+    ; CPU $2000-$3FFF -> Attic $87EE000-$87EFFFF, high map unchanged.
+    lda #$87
+    ldx #$0f
+    ldy $1e83
+    ldz $1e82
+    map
+    lda #$c0
+    ldx #$2e
+    map
+    eom
+    sei
+    jsr $2000
+    ; Restore both megabyte selectors, then the precise original map.
+    lda $1e84
+    ldx #$0f
+    ldy $1e85
+    ldz #$0f
+    map
+    lda $1e81
+    ldx $1e80
+    ldy $1e83
+    ldz $1e82
+    map
+    eom
+    sei
+return_regs:
+    pla
+    tab
+    plz
+    lda $1e8d
+    cmp #2
+    beq pass_through
+    cmp #0
+    beq success
+    plp
+    lda $1e89
+    ldx $1e8a
+    ldy $1e8b
+    sec
+    rts
+success:
+    plp
+    lda $1e89
+    ldx $1e8a
+    ldy $1e8b
+    clc
+    rts
+pass_through:
+    plp
+    lda $1e86
+    ldx $1e87
+    ldy $1e88
+    jmp ($1e90)
+!if * > $1d00 { !error "Gateway overlaps sector buffer" }

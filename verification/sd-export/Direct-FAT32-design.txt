@@ -1,0 +1,26 @@
+D65 Studio 0.2.5 direct FAT32 writer — original Rust implementation
+Inspiration: MEGA65 mega65-tools src/tools/mega65_ftp.c,
+find_contiguous_clusters and upload_single_file. No upstream code copied.
+Format reference: Microsoft FAT32 specification; sys/disk.h for macOS ioctls.
+
+Root-only, new 8.3 D65/D81 file. Never writes an MBR or partition table.
+Rejects geometry mismatches, dirty state, unequal FAT mirrors, bad boot
+backup/FSInfo, invalid/cyclic/cross-linked directory-reachable chains,
+existing short/long filenames, full root directory, and no contiguous run.
+Data writes touch only audited free clusters. Metadata patches are journaled
+before writes. Dirty flags precede data/FAT/directory publication. FAT chains,
+all changed metadata, and image bytes are read back. Caught errors roll back
+metadata; persistent failures leave dirty flags and the card unmounted.
+
+macOS boundary: exact external physical partition identity, whole disk and
+volume UUID; non-forced diskutil unmountDisk; exclusive O_NOFOLLOW raw open;
+actual descriptor block-size/count ioctls; bounded partition IO. Same app
+binary runs via the built-in macOS administrator prompt. No installer.
+After remount the visible image is compared again. Internal/virtual disks
+are refused. Hardware boundary not yet end-to-end tested.
+
+Journal format (little endian): D65FATJ1 (8 bytes), partition sector count
+(u64), patch count (u64), original boot sector (512 bytes), then for each
+patch: relative sector (u64), original sector (512), intended sector (512).
+The private export folder also retains input image and request.txt on errors.
+There is no automatic journal replay; never replay onto a different card.

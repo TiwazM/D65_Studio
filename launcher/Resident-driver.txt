@@ -1,0 +1,125 @@
+D65 Studio 0.3.1 — resident read-only file service, ABI 1 (experimental)
+
+What it does
+------------
+RUN"START" installs the driver and file catalogue, then launches a selection.
+The driver remains callable after the selected program starts. A cooperating
+program can read PRG, SEQ or USR files by exact PETSCII name or catalogue index.
+No assembler, ROM modification, network or extra desktop utility is required.
+
+The default mode does NOT intercept KERNAL LOAD, OPEN, CHKIN, BASIN, CLOSE or
+SAVE. Optional LOAD compatibility is described in LOAD-compatibility.txt; it
+adds 8 KiB of Attic RAM and redirects supported LOAD/VERIFY calls on ROM 920413.
+Existing single-load programs can start unchanged. A program that subsequently
+uses ordinary disk calls is not automatically made compatible with extended
+sectors. Custom track loaders, C64 mode, writes and transparent multi-file-game
+compatibility are not implemented. Do not SAVE, SCRATCH or VALIDATE this image.
+
+Memory contract
+---------------
+Reserve bank 0 $1600-$1EFF (2,304 bytes): resident executable, sector buffer
+$1D00-$1DFF, mailbox $1E00-$1E7F. The KERNAL/BASIC documentation designates this
+utility range as free; individual programs can still choose to use it.
+Reserve physical $87F0000-$87FFFFF (top 64 KiB of the MEGA65's 8 MiB Attic RAM).
+$87F0000-$87FDFFF is temporary staging; $87FE000-$87FFFFF holds the catalogue.
+No graphics-bank MEM reservation is needed. Chip RAM banks 4 and 5 remain free.
+The code remains in the low utility area so BASIC SYS can call it directly.
+
+These are software reservations, not memory protection. Programs must not use
+these ranges, change the code/catalogue, change the mounted image, or run another
+driver call concurrently. Full-screen machine-code games may ignore the ROM's
+memory conventions. There is no universal unused address safe for every game.
+Nexys systems without Attic RAM are unsupported. Freezer snapshots do not save
+Attic RAM: after restoring a snapshot that has lost it, re-run START.
+
+Calling the service
+-------------------
+Use BANK 0:SYS 5632 from BASIC, or JSR $1600 with the utility area and extended
+I/O mapped normally. The direct service requires base page 0. It preserves Z,
+B, interrupt/decimal flags, and DMA format/list-megabyte settings; A/X/Y and the
+DMA list-address registers are scratch. Interrupts are disabled during the read.
+The service is synchronous, non-reentrant and selects mounted-image drive 8.
+Commands 1-4 return to the caller; they never queue RUN or change BASIC pointers.
+Only command 0 commits a BASIC program and queues RUN; call it from DIRECT mode,
+not from a running BASIC program.
+
+Mailbox at $1E00 (decimal 7680), bank 0:
+ offset 14  command (decimal address 7694)
+ offset 15  destination bank, 0 or 1 (7695)
+ offset 16  destination address low (7696)
+ offset 17  destination address high (7697)
+ offset 18  zero-based file index low (7698)
+ offset 19  zero-based file index high (7699)
+ offset 32..47 exact 16-byte PETSCII filename, padded with $A0 (7712..7727)
+
+Commands:
+ 0: Launch PRG by index at $2001 in bank 0, update BASIC end pointers, queue RUN.
+ 1: Read complete raw file by index to the supplied destination.
+ 2: Read complete raw file by name to the supplied destination.
+ 3: Load PRG by name into the supplied bank at its stored two-byte address.
+ 4: Load PRG by index into the supplied bank at its stored two-byte address.
+For commands 3/4, the two load-address bytes are skipped. The program is not run.
+For commands 1/2, every byte is copied, including PRG address bytes if present.
+Names are exact and case-sensitive PETSCII bytes; there are no wildcards, path
+prefixes, drive prefixes or ',S' suffix parsing. Index order is the compilation
+file order excluding START, including supporting files omitted from the menu.
+
+Results:
+ offset 6   status: 0 success, 2 failure (decimal 7686)
+ offset 30,31 bytes copied, little endian (7710,7711); zero on failure/empty file
+ offset 8   diagnostic stage (7688)
+ offset 9   FDC status at failure
+ offset 10,11 mounted-image / format flags
+ offset 12,13 last logical track / sector
+Offsets 0..5 and 64..87 are internal working memory. Optional LOAD compatibility
+also reserves $1E80-$1ED7 and uses private command 5; applications must not use
+that command or change the hook state. Offset 7 is a developer
+D81-control-test flag; keep zero on real D65 images. Clear the mailbox when
+installing. START does this automatically.
+
+Stage $12 = invalid command/catalogue or incompatible file type; $13 = name or
+index not found; $14 = destination out of range. Other stages describe controller,
+chain, length, header or checksum errors (see reader.a).
+
+The entire output must fit within $2000-$F6FF in bank 0 or 1. The caller must
+choose a region that does not overwrite its executing code or live BASIC data.
+Bank 1 contains BASIC arrays and strings: do not use it casually from BASIC.
+Menu programs start at $2001 and can be at most 55,041 file bytes including the
+two-byte load address. Raw output can be at most 55,040 bytes at $2000; less at
+higher destinations. The staging bound is 57,344 file bytes. Larger files can
+be stored and extracted by the desktop app but cannot yet be read in chunks by
+this service; oversized lengths are rejected before staging. No bank wrapping.
+
+Each nonempty read follows a length-bounded chain, checks geometry and controller
+status, and validates the catalogue's 16-bit byte sum before copying to the final
+destination. Failure leaves that destination unchanged. This checksum detects
+common transfer errors; it is not cryptographic authentication. Empty raw files
+return success without a DMA copy. No write-sector commands are issued.
+
+BASIC example: after running START, a small cooperating BASIC program can read
+MESSAGE to $C000 using the included Resident-demo.bas. Ensure $C000 is unused by
+that program. RESDRV.D65 demonstrates a 40,000-byte program making this second
+read after launch. RESMAX.D65 demonstrates a 55,041-byte PRG launch.
+
+Catalogue layout (desktop builder/debug tools)
+---------------------------------------------
+At $87FE000: ASCII 'D65R', ABI byte 1, file-count low/high, reserved zero.
+Then up to 295 entries of 24 bytes: raw name[16], track, logical sector,
+file length low/high, byte-sum low/high, file type, original directory flags.
+Lengths beyond 65535 are encoded as $FFFF, an unsupported-size sentinel, never
+truncated modulo 65536. START is excluded. The catalogue is embedded as DATA in
+START, so the image remains a single D65 file with no external dependencies.
+
+Validation and remaining limits
+-------------------------------
+The installed Xemu runs D81 controls of START, a 55,041-byte program, and the
+40,000-byte program's subsequent named SEQ read using its real DMA/Attic/FDC
+implementation and ROM 920413. The installed emulator cannot mount this D65
+container; extended-sector and cross-bank tests use the Xemu CPU/FDC harness
+with modeled DMA and D65 addressing. The new 0.3.0 reader is not yet tested on
+physical MEGA65 hardware. Earlier BANK2/EXTRA38 hardware successes were for the
+previous reader, not this revision.
+
+Sources: MEGA65 user guide, memory.tex (utility memory and Attic RAM),
+appendix-dmagic.tex (enhanced DMA options), appendix-kernal-jumptable.tex (VECTOR
+and LOAD contracts). The reader and builder are original MIT application code.

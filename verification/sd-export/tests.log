@@ -1,0 +1,56 @@
+   Compiling d65-studio v0.2.3 (/Users/hanffs/Documents/Codex/2026-10-14/hi/outputs/d65-studio)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.90s
+     Running unittests src/lib.rs (work/rust-target/debug/deps/d65_studio-0d24a9e20f01468d)
+
+running 12 tests
+test launcher::tests::reader_fits_reserved_ram ... ok
+test launcher::tests::rejects_bad_basic_pointers ... ok
+test launcher::compatibility_tests::rejects_unsupported_programs_and_reserved_name ... ok
+test sd_export::tests::sd_names_are_short_uppercase_with_correct_extension ... ok
+test sd_export::tests::readback_detects_corruption_and_truncation ... ok
+test launcher::tests::launcher_preserves_payload_in_upper_bank ... ok
+test launcher::compatibility_tests::preserves_both_banks_and_accepts_maximum_prg ... ok
+test launcher::directory_tests::all_directory_blocks_stay_in_rom_geometry_and_payloads_stay_extended ... ok
+test sd_export::tests::unsupported_layout_is_explicitly_unverified ... ok
+test sd_export::tests::exact_export_with_adjacent_extent_responses ... ok
+test sd_export::tests::existing_files_and_publish_races_are_not_overwritten ... ok
+test sd_export::tests::failed_exports_leave_no_image_or_temporary_file ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/disk.rs (work/rust-target/debug/deps/disk-5e762bf807e99d17)
+
+running 20 tests
+test bam_corruption_blocks_edits ... ok
+test directory_cycle_detection ... ok
+test cycle_detection ... ok
+test geometry_and_bam ... ok
+test crosslinks_block_edits ... ok
+test failed_replacement_keeps_original ... ok
+test invalid_terminal_count_rejected ... ok
+test malformed_size_never_guessed ... ok
+test extended_chains_are_readable_but_not_writable ... ok
+test reject_duplicate_and_invalid_names ... ok
+test unsupported_types_block_edits ... ok
+test rename_delete_and_reuse ... ok
+test independent_freezer_fixture ... ok
+test disk_full_is_transactional ... ok
+test new_never_overwrites ... ok
+test conversion_does_not_discard_unknown_data ... ok
+test full_image_conversion_is_lossless ... ok
+test block_boundaries_roundtrip ... ok
+test lock_backup_external_change ... ok
+test grows_directory_and_preserves_links ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+     Running tests/merge.rs (work/rust-target/debug/deps/merge-5aa4334c2413927d)
+
+running 4 tests
+test empty_source_banks_keep_directory_connected ... ok
+test reject_conflicts_corruption_types_and_out_of_bounds_bank_count ... ok
+test multi_sector_directories_and_terminal_counts ... ok
+test three_full_disks_independent_roundtrip ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+

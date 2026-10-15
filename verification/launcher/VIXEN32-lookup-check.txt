@@ -1,0 +1,28 @@
+VIXEN32 root inspection, 14 October 2026 — read-only
+
+The user reports TRYFIX.D65 mounts using BASIC MOUNT, while LAUNCH.D65
+reports FILE NOT FOUND and fails in Freezer with FF on the same card.
+Both files exist in /Volumes/VIXEN32 at the root, with no extra suffixes.
+Actual names: TRYFIX.D65 and LAUNCH.d65 (lowercase extension).
+Both are 5,570,560 bytes and match their respective Mac originals exactly.
+TRYFIX.D65: SHA256 2d4eb9da792b695fe8e01c57f4cfd82b0ace44ada8189f6187892b5d848429d4
+LAUNCH.d65: SHA256 f4495c40be33495c9b5e676bf21d9e3e719c95013f466a8bb79b2637ecafc142
+
+AppleDouble helpers ._TRYFIX.D65 and ._LAUNCH.d65 both exist, 4096 bytes each.
+Their presence alone does not explain the difference in mounting results.
+Raw partition access /dev/rdisk4s1 and /dev/disk4s1 is denied. Actual FAT
+short aliases, directory records, attributes and cluster chains were not read.
+Release-0.97.2 dos.asm was checked in the browser. Its name lookup uppercases
+the requested name; its LFN parser also uppercases names. Short-name bytes
+are copied without uppercasing. This does NOT prove lowercase display names
+cause this failure: the raw short-name bytes and LFN mode are unknown.
+Source: https://raw.githubusercontent.com/MEGA65/mega65-core/release-0.97.2/src/hyppo/dos.asm
+
+Suggested next isolated test: rename the existing LAUNCH.d65 in place to
+GAMES.D65 (all uppercase), then retry MOUNT. Do not replace TRYFIX. This
+changes the name/directory record without intentionally recopying payload.
+No SD-card changes made by the assistant.
+
+Follow-up: user reports uppercase rename makes no change. ROM error-path
+analysis now proves BASIC FILE NOT FOUND is generic for failed mounts.
+See mount-probe/Results.txt; filename causation remains unsupported.

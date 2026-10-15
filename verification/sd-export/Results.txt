@@ -1,0 +1,27 @@
+D65 Studio 0.2.3 SD export, 14 October 2026
+
+36 Rust disk/merge/launcher/export tests pass. Six new export tests cover
+exact bytes for a read-only merged image, adjacent physical extents,
+failed/partial reservation, detected fragmentation, I/O errors, invalid
+extent lengths, unavailable verification, read-back corruption/truncation,
+existing destinations, and a destination created during publication.
+The filesystem adapter is modeled; this is not a FAT32 hardware export
+test. Unchanged WebDAV tests were not repeated.
+
+macOS path: F_PREALLOCATE with F_ALLOCATECONTIG|F_ALLOCATEALL, sequential
+write, fsync, full byte comparison and F_LOG2PHYS_EXT extent queries.
+Fragmented output is cancelled. Unsupported extent lookup produces an
+explicit reservation-only report. No ordinary-copy fallback. Publication
+uses tempfile persist_noclobber (macOS no-replace rename).
+No raw-device writes, helper installation or elevation.
+
+The agent did not receive SD-card write access. Subsequently the user exported
+GAMES2.D65 to VIXEN32 using the app: contiguous reservation was accepted,
+byte comparison passed, and independent extent lookup returned ENOTSUP.
+The user confirmed that this copy mounts on core 0.97.2 / ROM 920413 and
+both IONDRIFT and ROCKSTORM load through START.
+
+Sources:
+https://developer.apple.com/documentation/fskit/fsvolume/preallocateflags
+https://developer.apple.com/documentation/fskit/fsvolume/preallocatehandler
+Local macOS SDK sys/fcntl.h: F_PREALLOCATE, fstore_t, F_LOG2PHYS_EXT.

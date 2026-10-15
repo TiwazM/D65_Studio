@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.40s
+     Running tests\windows_mount.rs (target\debug\deps\windows_mount-f9ee4e1ff4944a8e.exe)
+
+running 1 test
+test native_webclient_roundtrip ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.57s
+

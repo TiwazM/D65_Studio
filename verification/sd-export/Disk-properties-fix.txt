@@ -1,0 +1,18 @@
+D65 Studio 0.2.6 — macOS disk identification fix
+
+The direct export preflight incorrectly requested the diskutil plist key Whole.
+The actual key is WholeDisk. The former Mounted lookup was also removed;
+mounted paths now come from the macOS kernel filesystem mount table.
+
+Four targeted direct_sd tests passed, including identity parsing and refusal
+cases, native plist/journal handling, quoting/device validation, and a read-only
+comparison of the live VIXEN32 mount against fstatfs while the card was attached.
+The fixed code requires the parent identifier to match and fails closed if
+mount-table enumeration fails or exceeds its allocated buffer.
+
+Apple Silicon and Intel release builds succeeded on 2026-10-15.
+An actual diskutil query on this Mac independently confirmed WholeDisk and
+VirtualOrPhysical in the parent-disk schema. No physical disk was modified.
+The SD card was absent at packaging time. The authorization, unmount, direct
+physical-card write and remount sequence still requires an end-to-end card test.
+The earlier Whole error occurred before the card-writing stage.

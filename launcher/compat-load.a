@@ -1,0 +1,428 @@
+; Experimental ROM-920413 LOAD adapter. Stored at $87EE000, mapped at $2000.
+; Does not intercept OPEN or writes. Original MIT code.
+!cpu 4502
+* = $2000
+    lda $1e8e
+    cmp #1
+    beq install
+    cmp #2
+    lbne load
+    jmp uninstall
+install:
+    ; Refuse ROMs whose complete visible 8 KiB KERNAL differs from 920413.
+    jsr check_rom
+    bcc rom_ok
+    lda #$81
+    jmp install_error
+rom_ok:
+    jsr get_vectors
+    lda $1ebc
+    cmp #$40
+    bne original_vector
+    lda $1ebd
+    cmp #$1c
+    beq reinstall
+original_vector:
+    lda $1ebc
+    cmp #$e0
+    bne conflict
+    lda $1ebd
+    cmp #$f4
+    bne conflict
+reinstall:
+    lda #$e0
+    sta $1e90
+    lda #$f4
+    sta $1e91
+    lda #$40
+    sta $1ebc
+    lda #$1c
+    sta $1ebd
+    jsr set_vectors
+    lda #0
+    sta $1e89
+    sta $1e8d
+    rts
+conflict:
+    lda #$82
+install_error:
+    sta $1e89
+    lda #1
+    sta $1e8d
+    rts
+uninstall:
+    jsr get_vectors
+    lda $1ebc
+    cmp #$40
+    bne conflict
+    lda $1ebd
+    cmp #$1c
+    bne conflict
+    lda $1e90
+    sta $1ebc
+    lda $1e91
+    sta $1ebd
+    jsr set_vectors
+    lda #0
+    sta $1e89
+    sta $1e8d
+    rts
+get_vectors:
+    ldx #$a0
+    ldy #$1e
+    sec
+    jmp $ff8d
+set_vectors:
+    ldx #$a0
+    ldy #$1e
+    clc
+    jmp $ff8d
+load:
+    lda $ba
+    cmp #1
+    bne device
+    lda $1106
+device:
+    cmp #8
+    beq our_device
+    lda #2
+    sta $1e8d
+    rts
+our_device:
+    lda #0
+    sta $90
+    sta $1e8a
+    sta $1e8b
+    lda $1e86
+    and #$be
+    beq flags_ok
+    jmp unsupported
+flags_ok:
+    lda $cd
+    lbne unsupported
+    lda $cc
+    cmp #2
+    lbcs unsupported
+    sta dest_bank
+    ; Read the filename through the ROM's full 28-bit SETNAM/SETBNK pointer.
+    lda $b7
+    lbeq missing_name
+    sta name_len
+    ldz #0
+    !byte $ea
+    lda ($bb),z
+    cmp #$30
+    bne copy_name_init
+    inz
+    !byte $ea
+    lda ($bb),z
+    cmp #$3a
+    bne reset_name
+    lda name_len
+    sec
+    sbc #2
+    lbeq missing_name
+    sta name_len
+    ldz #2
+    bra copy_name_init
+reset_name:
+    ldz #0
+copy_name_init:
+    lda name_len
+    cmp #17
+    lbcs unsupported
+    ldx #15
+    lda #$a0
+pad_name:
+    sta $1e20,x
+    dex
+    bpl pad_name
+    ldx #0
+copy_name:
+    !byte $ea
+    lda ($bb),z
+    cmp #$2a
+    beq unsupported
+    cmp #$3f
+    beq unsupported
+    cmp #$3a
+    beq unsupported
+    cmp #$2c
+    beq unsupported
+    sta $1e20,x
+    inz
+    inx
+    cpx name_len
+    bne copy_name
+    ; START is always in normal sectors and excluded from our catalogue.
+    ; Let the ROM reload it so the same compilation can be restarted.
+    ldx #15
+check_start:
+    lda $1e20,x
+    cmp start_name,x
+    bne stage_file
+    dex
+    bpl check_start
+    lda #2
+    sta $1e8d
+    rts
+stage_file:
+    lda #5
+    sta $1e0e
+    jsr $1600
+    lda $1e06
+    beq staged_ok
+    lda $1e08
+    cmp #$13
+    beq not_found
+    lda #2
+    sta $90
+    lda #4
+    jmp load_error
+missing_name:
+    lda #8
+    jmp load_error
+unsupported:
+    lda #6
+    jmp load_error
+not_found:
+    lda #4
+    jmp load_error
+staged_ok:
+    ; Private command 5 validates/stages a PRG without modifying game RAM.
+    lda $1e02
+    sta count
+    lda $1e03
+    sta count+1
+    bne header_ok
+    lda count
+    cmp #2
+    bcs header_ok
+    jmp not_found
+header_ok:
+    ; Save the caller's scratch pointers before borrowing 8 zero-page bytes.
+    ldx #7
+save_zp:
+    lda $f3,x
+    sta saved_zp,x
+    dex
+    bpl save_zp
+    lda #0
+    sta $f3
+    sta $f4
+    lda #$7f
+    sta $f5
+    lda #8
+    sta $f6
+    lda $1e87
+    sta $f7
+    lda $1e88
+    sta $f8
+    lda dest_bank
+    sta $f9
+    lda #0
+    sta $fa
+    lda $1e86
+    and #$40
+    beq prg_header
+    lda $b9
+    beq destination
+    jmp invalid_dest
+prg_header:
+    lda $b9
+    beq skip_header
+    ldz #0
+    !byte $ea
+    lda ($f3),z
+    sta $f7
+    inz
+    !byte $ea
+    lda ($f3),z
+    sta $f8
+skip_header:
+    lda #2
+    sta $f3
+    sec
+    lda count
+    sbc #2
+    sta count
+    lda count+1
+    sbc #0
+    sta count+1
+destination:
+    lda $f8
+    cmp #$20
+    bcc invalid_dest
+    clc
+    lda $f7
+    adc count
+    sta $1e8a
+    lda $f8
+    adc count+1
+    sta $1e8b
+    bcs invalid_dest
+    cmp #$f7
+    bcc dest_ok
+    bne invalid_dest
+    lda $1e8a
+    beq dest_ok
+invalid_dest:
+    jsr restore_zp
+    jmp unsupported
+dest_ok:
+    lda count
+    ora count+1
+    beq loaded
+    lda $1e86
+    and #1
+    bne verify
+    ; Transfer only after complete validation. DMA addresses are physical.
+    lda $d703
+    pha
+    lda $d704
+    pha
+    lda $f3
+    sta dma_source
+    lda count
+    sta dma_count
+    lda count+1
+    sta dma_count+1
+    lda $f7
+    sta dma_dest
+    lda $f8
+    sta dma_dest+1
+    lda $f9
+    sta dma_dest+2
+    ; The DMA list itself lives in Attic RAM at $87EE000 + (label-$2000).
+    lda #0
+    sta $d703
+    lda #$0e
+    sta $d702
+    lda #$87
+    sta $d704
+    lda #>(dma_list+$c000)
+    sta $d701
+    lda #<dma_list
+    sta $d705
+    pla
+    sta $d704
+    pla
+    sta $d703
+    bra loaded
+verify:
+    ldz #0
+verify_byte:
+    !byte $ea
+    lda ($f3),z
+    !byte $ea
+    cmp ($f7),z
+    bne mismatch
+    inw $f3
+    inw $f7
+    lda count
+    bne dec_count
+    dec count+1
+dec_count:
+    dec count
+    lda count
+    ora count+1
+    bne verify_byte
+loaded:
+    jsr restore_zp
+    lda #0
+    sta $90
+    sta $1e89
+    sta $1e8d
+    rts
+mismatch:
+    jsr restore_zp
+    lda #16
+    sta $90
+    ; KERNAL VERIFY reports mismatch through READSS bit 4, carry clear.
+    lda #0
+    sta $1e89
+    sta $1e8d
+    rts
+restore_zp:
+    ldx #7
+restore_loop:
+    lda saved_zp,x
+    sta $f3,x
+    dex
+    bpl restore_loop
+    rts
+load_error:
+    sta $1e89
+    lda #1
+    sta $1e8d
+    rts
+start_name: !text "START"
+    !fill 11,$a0
+name_len: !byte 0
+dest_bank: !byte 0
+count: !word 0
+saved_zp: !fill 8,0
+dma_list:
+    !byte $80,$87,$81,0,0,0
+dma_count: !word 0
+dma_source: !word 0
+    !byte $0f
+dma_dest: !word 0
+    !byte 0
+    !word 0
+check_rom:
+    lda #$ff
+    ldx #3
+crc_init:
+    sta crc,x
+    dex
+    bpl crc_init
+    lda #$e0
+    sta crc_read+2
+    ldx #0
+crc_read:
+    lda $e000,x
+    eor crc
+    sta crc
+    ldy #8
+crc_bit:
+    lsr crc+3
+    ror crc+2
+    ror crc+1
+    ror crc
+    bcc crc_next
+    lda crc
+    eor #$20
+    sta crc
+    lda crc+1
+    eor #$83
+    sta crc+1
+    lda crc+2
+    eor #$b8
+    sta crc+2
+    lda crc+3
+    eor #$ed
+    sta crc+3
+crc_next:
+    dey
+    bne crc_bit
+    inx
+    bne crc_read
+    inc crc_read+2
+    bne crc_read
+    ldx #3
+crc_test:
+    lda crc,x
+    eor #$ff
+    cmp rom_crc,x
+    bne crc_bad
+    dex
+    bpl crc_test
+    clc
+    rts
+crc_bad:
+    sec
+    rts
+crc: !fill 4,0
+rom_crc: !byte $c7,$17,$ba,$fe
+!if * > $4000 { !error "Compatibility helper exceeds high-memory code reservation" }

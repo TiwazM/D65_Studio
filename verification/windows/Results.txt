@@ -1,0 +1,143 @@
+D65 Studio 0.3.1 Windows preview, revision 2 — 15 October 2026
+
+REVISION 2 CHANGES
+The shared FAT32 exporter reads both FATs in up to 256 KiB requests, reads
+existing directory clusters in 4 KiB requests, and writes/verifies image data
+in up to 256 KiB requests. Windows uses a reusable 4096-byte-aligned buffer;
+the macOS raw adapter implements the same bulk interface. Sector operations
+remain for small metadata patches. All flush, journal, recovery, full-chain
+audit and read-back boundaries are preserved.
+
+Windows accepts existing nested SD-card directories, resolving validated long
+names or short aliases from the exclusively locked FAT32 volume. New image
+names remain uppercase 8.3. No folder creation or directory expansion occurs.
+Only the selected folder's entry is published. Reparse points, traversal,
+network/device paths, missing folders and ambiguous names are refused.
+The GUI reports phase and elapsed time using a local shared progress word.
+Progress is informational and is not trusted for any disk safety decision.
+
+FSInfo is optional free-space/search information. Missing or unrecognized
+signatures no longer reject an otherwise supported card or imply its files
+are damaged. Those sectors are preserved byte-for-byte and never journaled
+for modification. Valid hints are updated using the actual FAT scan. FAT
+mismatch, dirty flags, invalid boot geometry, out-of-bounds FSInfo addresses,
+corrupt/cross-linked chains and insufficient consecutive space still refuse
+writes. No integrity check on actual file allocation was removed.
+
+ENVIRONMENT
+x86_64-pc-windows-msvc; rustc 1.91.0; native MSVC target.
+Windows build 26300.9550 (DisplayVersion 26H2). Release uses +crt-static and
+Windows GUI subsystem. Dependency inspection used dumpbin 14.44.35222.0.
+Only built-in Windows DLLs are imported; no VCRUNTIME/MSVCP, Rust, Python,
+third-party filesystem driver or separate runtime installation is required.
+Other Windows builds, ARM64 execution and reader compatibility are untested.
+
+PASS — WINDOWS TEST EXECUTION
+71 regular Rust tests: 26 library, 20 disk, 15 FAT32, 4 merge, 6 WebDAV.
+The opt-in actual Windows WebClient integration test also passed, plus the
+separate regular-file timing experiment (73 executed tests in total).
+See tests-r2.log, fat-export-r2.log, webclient-r2.log and transfer-benchmark-r2.log.
+The final package-build-r2.log includes the complete 71-test suite.
+
+The native WebClient test maps disposable local D65 images using Windows'
+WebDAV redirector. Reads, create/overwrite, rename, deletion, persisted bytes,
+read-only enforcement and non-forced eject pass. Mappings were removed. No
+Windows service, authentication, security or firewall settings were changed.
+Missing/disabled service detection and drive/path validation retain coverage.
+
+New tests cover invalid/absent FSInfo preservation; nested and long folder
+names; checksum, collision and ambiguity checks; unchanged parent directories;
+full destinations; existing fragmented directory chains; rollback at every
+metadata boundary and mid-data failures; bulk/sector byte-identical output;
+native aligned-buffer I/O, boundaries, short reads and progress-channel lifetime.
+Earlier failure tests still cover flush failures, read-back corruption, no-write
+preflight/journal errors and unrecoverable restoration.
+Two legacy temporary-file rename tests fail inside the Codex filesystem sandbox
+with Access Denied; the complete suite passes outside that sandbox. This is
+recorded separately from an application failure.
+
+PASS — LOCAL-FILE TRANSFER EXPERIMENT (NOT SD-CARD TIMING)
+Native Windows adapter, debug test binary, regular temporary files on this PC,
+FILE_FLAG_WRITE_THROUGH, 5,570,560 bytes. One timing sample per transfer size:
+  512-byte requests: 10,880 writes; write+flush 0.588 s; including read-back 0.606 s.
+  256 KiB requests:      22 writes; write+flush 0.004 s; including read-back 0.006 s.
+Read-back compared every byte in both runs. Separately, a simulated complete
+export compared every resulting sector between the old fallback and batched
+interface. The final media matched, with 22 image write requests and 27 bulk
+read requests (FATs, root cluster and image), plus small metadata operations.
+These measurements isolate call overhead. They are neither a full export
+benchmark nor a prediction of SD, USB-reader or Mac throughput. No physical
+write or Mac timing was performed. Large real directory trees still cost time.
+
+PASS — SIMULATED FAT32 PARTITION ON WINDOWS
+A new 268,932,096-byte regular partition-image file received D65 and D81 images
+through batched native Windows file seek/read/write/flush operations. It was
+never attached as a volume; no physical device was opened or formatted.
+An independent PowerShell/.NET reader verified both FATs, followed every new
+chain and compared SHA-256 payloads with fresh images from the release binary:
+  NEW.D65:   5,570,560 bytes; 1,360 consecutive clusters; first cluster 3.
+  CHECK.D81:   819,200 bytes;   200 consecutive clusters; first cluster 1363.
+See release-smoke-r2.log. This test does not exercise physical-device IOCTLs.
+
+PASS — OPTIMIZED WINDOWS EXECUTABLE
+CLI: creation, import, list, duplicate refusal, byte-identical D65/D81/D65
+roundtrip, LOAD-compatible compilation, Unicode/spaced paths and NTFS SD-target
+refusal before elevation. See release-smoke-r2.log and dependencies-r2.log.
+The rebuilt GUI launched and its initial window was visually confirmed using
+Computer Use. Further interaction was stopped when the user's desktop focus
+changed. Dialog workflows and physical-export progress have not been exercised
+end-to-end. This is a startup/rendering pass, not a complete GUI test.
+
+WINDOWS PHYSICAL SD PATH — IMPLEMENTED, END-TO-END VALIDATION PENDING
+Volume GUID, FAT serial, storage descriptor, disk/partition identity, geometry,
+offset and length checks remain. Fixed/internal/virtual/unknown media, whole
+disks, multi-extent volumes and the Windows system disk are refused. The same
+executable handles UAC, immutable staged input, exclusive FSCTL_LOCK_VOLUME,
+FSCTL_DISMOUNT_VOLUME, aligned raw I/O, durable journals, restoration and
+raw/remounted verification. Failed recovery attempts to leave the volume
+offline; otherwise a warning holds the exclusive lock until card removal.
+Actual UAC-to-card writes, lock/dismount/offline behavior, reader compatibility,
+power-loss recovery and real card throughput remain untested. No disposable
+physical card was identified/authorized for this run. No disk was formatted.
+
+PASS — MAC SOURCE COMPATIBILITY (NOT MAC EXECUTION)
+cargo check --locked --offline --target aarch64-apple-darwin
+cargo check --locked --offline --target x86_64-apple-darwin
+Both pass with the shared changes and new bulk raw-I/O methods. No Mac link,
+signing, application execution or physical export is claimed. Mac destination
+selection remains root-only. Its existing build-macos.sh workflow is unchanged.
+src/disk.rs, src/launcher.rs, FORMAT.md, build-macos.sh and checked-in launcher
+binaries match the supplied source byte-for-byte; see preserved-files.sha256.txt.
+src/fat_export.rs and src/direct_sd.rs intentionally differ in this revision.
+
+PRIOR XEMU / MEGA65 EVIDENCE — NOT RE-RUN HERE
+Supplied 0.3.1 results report 14 KERNAL LOAD/VERIFY checks and the BASIC BLOAD
+example passing Xemu D81 controls, plus 105 CPU/FDC cases with modeled DMA/D65
+addressing. Xemu could not mount this D65 container. Extended-sector operation
+of the 0.3.1 LOAD hook and resident reader still requires real MEGA65 confirmation.
+Earlier BANK2/EXTRA38 hardware successes apply to an older reader. No new Xemu,
+physical MEGA65 or arbitrary-game compatibility result is claimed. The MEGA65
+disk format, internal allocator and loader are unchanged.
+
+REPRODUCTION — DEVELOPER TOOLS ONLY
+cargo test --locked
+cargo test --locked --test windows_mount -- --ignored --nocapture
+cargo test --locked --lib native_file_transfer_benchmark -- --ignored --nocapture
+cargo build --locked --release --target x86_64-pc-windows-msvc
+Set D65_FAT_FIXTURE to a NEW regular .img filename before the FAT test to create
+a file-backed fixture. Existing files are refused. Never supply a device path.
+The independent checker requires PowerShell 7:
+  pwsh -File verification/windows/verify-release.ps1 -FixturePath C:\temp\test.img -Executable path\to\d65-studio.exe
+build-windows.ps1 packages the r2 static-runtime executable, instructions,
+samples and third-party notices. End users need none of these developer tools.
+Logs without an r2 suffix are retained evidence from the initial Windows build;
+this report and r2 logs describe the revised source and executable.
+
+REFERENCES
+Microsoft FAT specification, FAT32 FSInfo structure (advisory hints):
+https://www.scs.stanford.edu/~zyedidia/docs/_other/fat.pdf
+https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
+https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_lock_volume
+https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_dismount_volume
+https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-ioctl_volume_offline
+https://learn.microsoft.com/en-us/windows/whats-new/deprecated-features

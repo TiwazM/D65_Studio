@@ -1,0 +1,112 @@
+   Compiling d65-studio v0.3.1 (C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\work\d65-studio)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.18s
+     Running unittests src\lib.rs (target\debug\deps\d65_studio-969db5717781c6a5.exe)
+
+running 23 tests
+test direct_sd::tests::device_identity_rejects_unsafe_media ... ok
+test direct_sd::tests::paths_cannot_select_whole_disks_or_subdirectories ... ok
+test launcher::tests::reader_fits_reserved_ram ... ok
+test launcher::tests::rejects_bad_basic_pointers ... ok
+test mount::platform::tests::drive_and_url_validation ... ok
+test sd_export::tests::sd_names_are_short_uppercase_with_correct_extension ... ok
+test sd_export::tests::readback_detects_corruption_and_truncation ... ok
+test windows::tests::quotes_arguments_without_shell_expansion ... ok
+test launcher::compatibility_tests::rejects_unsupported_programs_and_reserved_name ... ok
+test direct_sd::tests::journal_is_durable_new_file_only ... ok
+test launcher::compatibility_tests::packing_preserves_raw_names_flags_and_data_files ... ok
+test launcher::compatibility_tests::preserves_files_and_accepts_maximum_prg ... ok
+test launcher::tests::launcher_reclaims_standard_space ... ok
+test sd_export::tests::exact_export_with_adjacent_extent_responses ... ok
+test sd_export::tests::existing_files_and_publish_races_are_not_overwritten ... ok
+test sd_export::tests::unsupported_layout_is_explicitly_unverified ... ok
+test launcher::directory_tests::directory_stays_in_rom_geometry_and_payloads_reclaim_standard_space ... ok
+test launcher::tests::compatibility_is_optional_and_fits_reserved_memory ... ok
+test sd_export::tests::failed_exports_leave_no_image_or_temporary_file ... ok
+test launcher::compatibility_tests::packing_rejects_conflicts_and_over_capacity ... ok
+test launcher::compatibility_tests::imports_many_disks_and_preserves_every_file_and_source ... ok
+test launcher::compatibility_tests::supports_full_catalogue_and_retains_large_data ... ok
+test launcher::tests::compatibility_supports_largest_menu_and_catalogue ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+     Running unittests src\main.rs (target\debug\deps\d65_studio-94e561ad3b93143a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\disk.rs (target\debug\deps\disk-c1c92c0916d87b64.exe)
+
+running 20 tests
+test bam_corruption_blocks_edits ... ok
+test geometry_and_bam ... ok
+test directory_cycle_detection ... ok
+test malformed_size_never_guessed ... ok
+test extended_chains_are_readable_but_not_writable ... ok
+test invalid_terminal_count_rejected ... ok
+test cycle_detection ... ok
+test new_never_overwrites ... ok
+test unsupported_types_block_edits ... ok
+test crosslinks_block_edits ... ok
+test reject_duplicate_and_invalid_names ... ok
+test rename_delete_and_reuse ... ok
+test failed_replacement_keeps_original ... ok
+test independent_freezer_fixture ... ok
+test disk_full_is_transactional ... ok
+test conversion_does_not_discard_unknown_data ... ok
+test block_boundaries_roundtrip ... ok
+test full_image_conversion_is_lossless ... ok
+test lock_backup_external_change ... ok
+test grows_directory_and_preserves_links ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+     Running tests\fat_export.rs (target\debug\deps\fat_export-a8dd0646ff3a8187.exe)
+
+running 8 tests
+test writes_a_sparse_fixture_for_external_filesystem_check ... ok
+test journal_failure_prevents_all_writes ... ok
+test preflight_failures_never_write ... ok
+test corruption_is_detected_and_persistent_failures_require_recovery ... ok
+test handles_directory_sector_boundary_and_rejects_long_name_collision ... ok
+test chooses_a_consecutive_run_and_preserves_existing_files ... ok
+test flush_failures_restore_metadata ... ok
+test interrupted_writes_restore_metadata_and_do_not_publish ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+
+     Running tests\merge.rs (target\debug\deps\merge-958664617a701f93.exe)
+
+running 4 tests
+test empty_source_banks_keep_directory_connected ... ok
+test reject_conflicts_corruption_types_and_out_of_bounds_bank_count ... ok
+test multi_sector_directories_and_terminal_counts ... ok
+test three_full_disks_independent_roundtrip ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\webdav.rs (target\debug\deps\webdav-b47b6ea2710affaf.exe)
+
+running 6 tests
+test windows_probes_do_not_expose_session_contents ... ok
+test read_only_and_invalid_names ... ok
+test merged_images_are_readable_only ... ok
+test special_names_and_replace ... ok
+test full_disk_move_and_failed_copy ... ok
+test dav_roundtrip_and_metadata ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests\windows_mount.rs (target\debug\deps\windows_mount-8d09d4825db189ad.exe)
+
+running 1 test
+test native_webclient_roundtrip ... ignored, requires built-in WebClient and a permitted local drive mapping
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests d65_studio
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

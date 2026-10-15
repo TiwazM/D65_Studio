@@ -1,0 +1,203 @@
+; D65 Studio mount diagnostic. Original code, MIT license.
+; No file-write traps. Temporarily replaces drive 8's mounted image.
+!cpu 4502
+* = $1fff
+!word $2001
+!word basicend
+!word 10
+!byte $fe,$02
+!text "0:"
+!byte $9e
+!text "8448"
+!byte 0
+basicend: !word 0
+!fill $2100-*,0
+entry:
+    php
+    sei
+    cld
+    lda #$47
+    sta $d02f
+    lda #$53
+    sta $d02f
+    ldx #<title
+    ldy #>title
+    jsr puts
+    lda #$02
+    sta $d640
+    clv
+    tax
+    lda #$3c
+    sta $d640
+    clv
+    jsr capture
+    ldx #<rootmsg
+    ldy #>rootmsg
+    jsr puts
+    jsr report
+    lda savedcarry
+    beq done
+    ldx #<name1
+    ldy #>name1
+    jsr probe
+    ldx #<name2
+    ldy #>name2
+    jsr probe
+    ldx #<name3
+    ldy #>name3
+    jsr probe
+done:
+    ldx #<endmsg
+    ldy #>endmsg
+    jsr puts
+    plp
+    rts
+probe:
+    stx copyname+1
+    sty copyname+2
+    ldx #0
+copyname:
+    lda $ffff,x
+    sta $0400,x
+    inx
+    cmp #0
+    bne copyname
+    lda #13
+    jsr $ffd2
+    ldx #0
+    ldy #4
+    jsr puts
+    lda #13
+    jsr $ffd2
+    ldx #0
+    ldy #4
+    lda #$2e
+    sta $d640
+    clv
+    jsr capture
+    ldx #<setmsg
+    ldy #>setmsg
+    jsr puts
+    jsr report
+    lda savedcarry
+    beq probeend
+    lda #$34
+    sta $d640
+    clv
+    jsr capture
+    ldx #<findmsg
+    ldy #>findmsg
+    jsr puts
+    jsr report
+    lda savedcarry
+    beq probeend
+    lda #$40
+    sta $d640
+    clv
+    jsr capture
+    ldx #<oldmsg
+    ldy #>oldmsg
+    jsr puts
+    jsr report
+    ldx #0
+    lda #$4a
+    sta $d640
+    clv
+    jsr capture
+    ldx #<newmsg
+    ldy #>newmsg
+    jsr puts
+    jsr report
+probeend:
+    rts
+capture:
+    sta saveda
+    php
+    pla
+    and #1
+    sta savedcarry
+    lda #$38
+    sta $d640
+    clv
+    sta savederror
+    rts
+report:
+    ldx #<cmsg
+    ldy #>cmsg
+    jsr puts
+    lda savedcarry
+    ora #$30
+    jsr $ffd2
+    ldx #<amsg
+    ldy #>amsg
+    jsr puts
+    lda saveda
+    jsr hex
+    ldx #<emsg
+    ldy #>emsg
+    jsr puts
+    lda savederror
+    jsr hex
+    lda #13
+    jmp $ffd2
+puts:
+    stx readtext+1
+    sty readtext+2
+    ldx #0
+readtext:
+    lda $ffff,x
+    beq putsdone
+    phx
+    jsr $ffd2
+    plx
+    inx
+    bne readtext
+putsdone:
+    rts
+hex:
+    pha
+    lsr
+    lsr
+    lsr
+    lsr
+    jsr nibble
+    pla
+    and #15
+nibble:
+    cmp #10
+    bcc digit
+    clc
+    adc #7
+digit:
+    clc
+    adc #$30
+    jmp $ffd2
+savedcarry: !byte 0
+saveda: !byte 0
+savederror: !byte 0
+title: !text "D65 MOUNT CHECK - C=1 SUCCESS; A/E HEX"
+       !byte 13,0
+rootmsg: !text "ROOT  "
+         !byte 0
+setmsg: !text "SET   "
+        !byte 0
+findmsg: !text "FIND  "
+         !byte 0
+oldmsg: !text "OLD40 "
+        !byte 0
+newmsg: !text "NEW4A "
+        !byte 0
+cmsg: !text " C="
+      !byte 0
+amsg: !text " A="
+      !byte 0
+emsg: !text " E="
+      !byte 0
+name1: !text "TRYFIX.D65"
+       !byte 0
+name2: !text "GAMES.D65"
+       !byte 0
+name3: !text "LAUNCH.D65"
+       !byte 0
+endmsg: !text "DONE - NO DISK FILES WRITTEN"
+        !byte 13,0

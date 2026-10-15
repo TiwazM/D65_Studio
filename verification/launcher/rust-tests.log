@@ -1,0 +1,72 @@
+   Compiling d65-studio v0.1.0 (/Users/hanffs/Documents/Codex/2026-10-14/hi/outputs/d65-studio)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.80s
+     Running unittests src/lib.rs (work/rust-target/debug/deps/d65_studio-126e8a242d5822c5)
+
+running 5 tests
+test launcher::tests::reader_fits_reserved_ram ... ok
+test launcher::tests::rejects_bad_basic_pointers ... ok
+test launcher::compatibility_tests::rejects_unsupported_programs_and_reserved_name ... ok
+test launcher::tests::launcher_preserves_payload_in_upper_bank ... ok
+test launcher::compatibility_tests::preserves_both_banks_and_accepts_maximum_prg ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/main.rs (work/rust-target/debug/deps/d65_studio-091c7d25087b63f8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/disk.rs (work/rust-target/debug/deps/disk-58de466b72ba23eb)
+
+running 20 tests
+test directory_cycle_detection ... ok
+test bam_corruption_blocks_edits ... ok
+test crosslinks_block_edits ... ok
+test geometry_and_bam ... ok
+test cycle_detection ... ok
+test extended_chains_are_readable_but_not_writable ... ok
+test invalid_terminal_count_rejected ... ok
+test failed_replacement_keeps_original ... ok
+test malformed_size_never_guessed ... ok
+test reject_duplicate_and_invalid_names ... ok
+test rename_delete_and_reuse ... ok
+test unsupported_types_block_edits ... ok
+test independent_freezer_fixture ... ok
+test disk_full_is_transactional ... ok
+test conversion_does_not_discard_unknown_data ... ok
+test block_boundaries_roundtrip ... ok
+test full_image_conversion_is_lossless ... ok
+test new_never_overwrites ... ok
+test lock_backup_external_change ... ok
+test grows_directory_and_preserves_links ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+     Running tests/merge.rs (work/rust-target/debug/deps/merge-1b9040052038678d)
+
+running 4 tests
+test empty_source_banks_keep_directory_connected ... ok
+test reject_conflicts_corruption_types_and_out_of_bounds_bank_count ... ok
+test multi_sector_directories_and_terminal_counts ... ok
+test three_full_disks_independent_roundtrip ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/webdav.rs (work/rust-target/debug/deps/webdav-f2435d73b31d7446)
+
+running 5 tests
+test read_only_and_invalid_names ... ok
+test merged_images_are_readable_only ... ok
+test special_names_and_replace ... ok
+test full_disk_move_and_failed_copy ... ok
+test dav_roundtrip_and_metadata ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+   Doc-tests d65_studio
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

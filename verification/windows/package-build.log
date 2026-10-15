@@ -1,0 +1,276 @@
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\work\d65-studio\target\debug\incremental\d65_studio-2deo6swm15gea\s-hn8p927ogv-0l4udt0-working`
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\work\d65-studio\target\debug\incremental\d65_studio-0nl3x04wvq40t\s-hn8p927ogh-1klpuf0-working`
+
+warning: `d65-studio` (bin "d65-studio" test) generated 1 warning
+warning: `d65-studio` (bin "d65-studio") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+     Running unittests src\lib.rs (target\debug\deps\d65_studio-969db5717781c6a5.exe)
+
+running 23 tests
+test direct_sd::tests::paths_cannot_select_whole_disks_or_subdirectories ... ok
+test direct_sd::tests::device_identity_rejects_unsafe_media ... ok
+test launcher::tests::reader_fits_reserved_ram ... ok
+test launcher::tests::rejects_bad_basic_pointers ... ok
+test mount::platform::tests::drive_and_url_validation ... ok
+test sd_export::tests::readback_detects_corruption_and_truncation ... ok
+test sd_export::tests::sd_names_are_short_uppercase_with_correct_extension ... ok
+test windows::tests::quotes_arguments_without_shell_expansion ... ok
+test launcher::compatibility_tests::rejects_unsupported_programs_and_reserved_name ... ok
+test direct_sd::tests::journal_is_durable_new_file_only ... ok
+test launcher::tests::launcher_reclaims_standard_space ... ok
+test launcher::compatibility_tests::packing_preserves_raw_names_flags_and_data_files ... ok
+test launcher::compatibility_tests::preserves_files_and_accepts_maximum_prg ... ok
+test sd_export::tests::exact_export_with_adjacent_extent_responses ... ok
+test sd_export::tests::existing_files_and_publish_races_are_not_overwritten ... ok
+test sd_export::tests::unsupported_layout_is_explicitly_unverified ... ok
+test launcher::tests::compatibility_is_optional_and_fits_reserved_memory ... ok
+test launcher::directory_tests::directory_stays_in_rom_geometry_and_payloads_reclaim_standard_space ... ok
+test sd_export::tests::failed_exports_leave_no_image_or_temporary_file ... ok
+test launcher::compatibility_tests::packing_rejects_conflicts_and_over_capacity ... ok
+test launcher::compatibility_tests::imports_many_disks_and_preserves_every_file_and_source ... ok
+test launcher::compatibility_tests::supports_full_catalogue_and_retains_large_data ... ok
+test launcher::tests::compatibility_supports_largest_menu_and_catalogue ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+
+     Running unittests src\main.rs (target\debug\deps\d65_studio-94e561ad3b93143a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\disk.rs (target\debug\deps\disk-c1c92c0916d87b64.exe)
+
+running 20 tests
+test bam_corruption_blocks_edits ... ok
+test directory_cycle_detection ... ok
+test geometry_and_bam ... ok
+test malformed_size_never_guessed ... ok
+test new_never_overwrites ... ok
+test cycle_detection ... ok
+test extended_chains_are_readable_but_not_writable ... ok
+test invalid_terminal_count_rejected ... ok
+test reject_duplicate_and_invalid_names ... ok
+test crosslinks_block_edits ... ok
+test unsupported_types_block_edits ... ok
+test rename_delete_and_reuse ... ok
+test independent_freezer_fixture ... ok
+test failed_replacement_keeps_original ... ok
+test disk_full_is_transactional ... ok
+test conversion_does_not_discard_unknown_data ... ok
+test full_image_conversion_is_lossless ... ok
+test block_boundaries_roundtrip ... ok
+test lock_backup_external_change ... ok
+test grows_directory_and_preserves_links ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+     Running tests\fat_export.rs (target\debug\deps\fat_export-a8dd0646ff3a8187.exe)
+
+running 8 tests
+test writes_a_sparse_fixture_for_external_filesystem_check ... ok
+test journal_failure_prevents_all_writes ... ok
+test preflight_failures_never_write ... ok
+test corruption_is_detected_and_persistent_failures_require_recovery ... ok
+test handles_directory_sector_boundary_and_rejects_long_name_collision ... ok
+test chooses_a_consecutive_run_and_preserves_existing_files ... ok
+test flush_failures_restore_metadata ... ok
+test interrupted_writes_restore_metadata_and_do_not_publish ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
+
+     Running tests\merge.rs (target\debug\deps\merge-958664617a701f93.exe)
+
+running 4 tests
+test empty_source_banks_keep_directory_connected ... ok
+test reject_conflicts_corruption_types_and_out_of_bounds_bank_count ... ok
+test multi_sector_directories_and_terminal_counts ... ok
+test three_full_disks_independent_roundtrip ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\webdav.rs (target\debug\deps\webdav-b47b6ea2710affaf.exe)
+
+running 6 tests
+test windows_probes_do_not_expose_session_contents ... ok
+test read_only_and_invalid_names ... ok
+test merged_images_are_readable_only ... ok
+test special_names_and_replace ... ok
+test dav_roundtrip_and_metadata ... ok
+test full_disk_move_and_failed_copy ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests\windows_mount.rs (target\debug\deps\windows_mount-8d09d4825db189ad.exe)
+
+running 1 test
+test native_webclient_roundtrip ... ignored, requires built-in WebClient and a permitted local drive mapping
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests d65_studio
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\work\d65-studio\target\debug\incremental\d65_studio-0nl3x04wvq40t\s-hn8p927ogh-1klpuf0-working`
+
+warning: `d65-studio` (bin "d65-studio") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+     Running tests\windows_mount.rs (target\debug\deps\windows_mount-8d09d4825db189ad.exe)
+
+running 1 test
+test native_webclient_roundtrip ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.56s
+
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling cfg-if v1.0.5
+   Compiling stable_deref_trait v1.2.1
+   Compiling smallvec v1.16.3
+   Compiling windows-link v0.2.1
+   Compiling khronos_api v3.1.0
+   Compiling windows_x86_64_msvc v0.52.6
+   Compiling autocfg v1.5.1
+   Compiling cfg_aliases v0.2.2
+   Compiling litemap v0.8.3
+   Compiling xml-rs v0.8.29
+   Compiling bitflags v2.13.2
+   Compiling writeable v0.6.4
+   Compiling log v0.4.34
+   Compiling icu_normalizer_data v2.3.0
+   Compiling once_cell v1.21.4
+   Compiling icu_properties_data v2.3.0
+   Compiling simd-adler32 v0.3.10
+   Compiling utf8_iter v1.0.4
+   Compiling crc32fast v1.5.2
+   Compiling zerocopy v0.8.63
+   Compiling version_check v0.9.5
+   Compiling adler2 v2.0.1
+   Compiling parking_lot_core v0.9.12
+   Compiling windows_x86_64_msvc v0.53.1
+   Compiling num-traits v0.2.19
+   Compiling scopeguard v1.2.0
+   Compiling ttf-parser v0.25.1
+   Compiling raw-window-handle v0.6.2
+   Compiling windows-targets v0.52.6
+   Compiling lock_api v0.4.14
+   Compiling windows-sys v0.52.0
+   Compiling gl_generator v0.14.0
+   Compiling miniz_oxide v0.9.1
+   Compiling ab_glyph_rasterizer v0.1.10
+   Compiling miniz_oxide v0.8.9
+   Compiling fdeflate v0.3.7
+   Compiling ahash v0.8.12
+   Compiling winit v0.30.13
+   Compiling pin-project-lite v0.2.17
+   Compiling epaint_default_fonts v0.31.1
+   Compiling pxfm v0.1.30
+   Compiling percent-encoding v2.3.2
+   Compiling nohash-hasher v0.2.0
+   Compiling profiling v1.0.18
+   Compiling tracing-core v0.1.36
+   Compiling flate2 v1.1.10
+   Compiling glutin_wgl_sys v0.6.1
+   Compiling glutin_egl_sys v0.7.1
+   Compiling parking_lot v0.12.5
+   Compiling syn v3.0.9
+   Compiling png v0.18.1
+   Compiling tracing v0.1.44
+   Compiling form_urlencoded v1.2.2
+   Compiling windows-targets v0.53.5
+   Compiling memoffset v0.9.1
+   Compiling glutin v0.32.3
+   Compiling error-code v3.4.0
+   Compiling cursor-icon v1.2.0
+   Compiling dpi v0.1.2
+   Compiling winapi v0.3.9
+   Compiling byteorder-lite v0.1.0
+   Compiling smol_str v0.2.2
+   Compiling getrandom v0.4.3
+   Compiling unicode-segmentation v1.13.3
+   Compiling clipboard-win v5.4.1
+   Compiling windows-sys v0.60.2
+   Compiling glutin-winit v0.5.0
+   Compiling libloading v0.8.9
+   Compiling owned_ttf_parser v0.25.1
+   Compiling windows-sys v0.59.0
+   Compiling ab_glyph v0.2.32
+   Compiling web-time v1.1.0
+   Compiling glow v0.16.0
+   Compiling litrs v1.0.1
+   Compiling rfd v0.15.4
+   Compiling libc v0.2.190
+   Compiling windows-sys v0.61.2
+   Compiling ascii v1.1.0
+   Compiling synstructure v0.14.0
+   Compiling moxcms v0.8.1
+   Compiling document-features v0.2.12
+   Compiling chunked_transfer v1.5.0
+   Compiling httpdate v1.0.3
+   Compiling fastrand v2.5.0
+   Compiling static_assertions v1.1.0
+   Compiling tiny_http v0.12.0
+   Compiling uuid v1.28.0
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.6
+   Compiling displaydoc v0.2.7
+   Compiling bytemuck_derive v1.12.1
+   Compiling fs2 v0.4.3
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.3
+   Compiling zerovec v0.11.8
+   Compiling zerotrie v0.2.5
+   Compiling bytemuck v1.25.2
+   Compiling emath v0.31.1
+   Compiling tinystr v0.8.4
+   Compiling potential_utf v0.1.6
+   Compiling ecolor v0.31.1
+   Compiling icu_locale_core v2.3.0
+   Compiling icu_collections v2.3.0
+   Compiling image v0.25.10
+   Compiling epaint v0.31.1
+   Compiling icu_provider v2.3.1
+   Compiling tempfile v3.27.0
+   Compiling icu_normalizer v2.3.0
+   Compiling icu_properties v2.3.0
+   Compiling egui v0.31.1
+   Compiling arboard v3.6.1
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling webbrowser v1.2.4
+   Compiling egui_glow v0.31.1
+   Compiling egui-winit v0.31.1
+   Compiling eframe v0.31.1
+   Compiling d65-studio v0.3.1 (C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\work\d65-studio)
+    Finished `release` profile [optimized] target(s) in 25.10s
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\clipboard-win-5.4.1\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\codespan-reporting-0.11.1\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\ecolor-0.31.1\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\eframe-0.31.1\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\egui-0.31.1\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\egui-wgpu-0.31.1\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\egui-winit-0.31.1\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\egui_glow-0.31.1\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\emath-0.31.1\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\epaint-0.31.1\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\gl_generator-0.14.0\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\gpu-descriptor-0.3.2\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\gpu-descriptor-types-0.2.0\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\hexf-parse-0.2.1\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\khronos_api-3.1.0\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\naga-24.0.0\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\quick-error-2.0.1\LICENSE-APACHE' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\quick-error-2.0.1\LICENSE-MIT' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\spirv-0.3.0+sdk-1.3.268.0\Cargo.toml' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\tiny_http-0.12.0\LICENSE-APACHE' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\tiny_http-0.12.0\LICENSE-MIT' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\windows-sys-0.52.0\license-apache-2.0' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+'C:\Users\lostl\Documents\Codex\2026-10-15\port-d65-studio-0-3-1\outputs\D65-Studio-0.3.1-Windows-x64\Third-party-licenses\windows-sys-0.52.0\license-mit' has LastWriteTime earlier than 1980. Compress-Archive will store any files with LastWriteTime values earlier than 1980 as 1/1/1980 00:00.
+..\..\outputs\D65-Studio-0.3.1-Windows-x64.zip

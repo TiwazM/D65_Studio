@@ -1,0 +1,32 @@
+D65 mount diagnostic — 14 October 2026
+
+Copy MNTCHECK.D81 to the SD-card root alongside TRYFIX.D65 and the failing
+image, named GAMES.D65 or LAUNCH.D65. Leave all those existing images intact.
+Mount MNTCHECK.D81 in drive 8 and enter RUN"START". Photograph the output.
+
+This program changes the SD working directory to the default drive root,
+checks TRYFIX.D65, GAMES.D65 and LAUNCH.D65, and attempts to mount each
+found file into drive 8 using both the old $40 and new $4A hypervisor calls.
+The diagnostic is already in RAM when it replaces its own mounted image.
+It does not write any disk files or patch the ROM. Mounts are temporary;
+reselect your desired disk afterward. One of GAMES/LAUNCH may be absent.
+
+C=1 means the operation succeeded; C=0 means it failed.
+A is the raw returned accumulator, E is the immediately captured error.
+A and E on success may be undefined or stale; use them only for failures.
+SET sets the requested name. FIND looks it up. OLD40/NEW4A attach it.
+These rows distinguish lookup failures from attach failures.
+
+Why: ROM 920413 at ROM offset $19AF6 invokes attach; every carry-clear
+result with a nonempty supplied filename loads BASIC error index $04
+at $19AFF. Targeted execution of the actual ROM using Xemu CPU65 verified
+that $88, $8A, $8B and $FF all take that same FILE NOT FOUND error path.
+BASIC's message therefore does not identify the underlying mount error.
+The user's rename to all-uppercase did not resolve the failure.
+
+Validation: diagnostic binary passed four modeled-hypervisor scenarios
+(success, missing file, fragmented image, FF), preserving the raw errors.
+Installed Xemu loaded START from this D81 under ROM 920413 and ran to DONE.
+Its SD card lacks the three target files, so all FIND rows correctly gave
+C=0 A=88 E=88. This does not validate D65 mounting in Xemu or establish the
+physical card's failure cause. No SD-card files were changed by the assistant.

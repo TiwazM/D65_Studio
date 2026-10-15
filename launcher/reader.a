@@ -1,0 +1,740 @@
+; D65 Studio resident read-only service v1. Original MIT code.
+; Entry $1600, buffer $1D00, mailbox $1E00; ABI in Resident-driver.txt.
+!cpu 4502
+* = $1600
+entry:
+    jmp engine
+finished:
+    lda #$10
+    sta $1e08
+    lda checksum
+    cmp $1e04
+    beq sumlowok
+    jmp fail
+sumlowok:
+    lda checksum+1
+    cmp $1e05
+    beq sumhighok
+    jmp fail
+sumhighok:
+!ifdef COMPAT {
+    lda $1e0e
+    cmp #5
+    bne notstageonly
+    lda #0
+    sta $1e06
+    jmp cleanup
+notstageonly:
+}
+    lda #$11
+    sta $1e08
+    jsr destination
+    bcc destinationok
+    jmp fail
+destinationok:
+    ; Never issue a zero-length DMA (it means 65536 bytes).
+    lda staged
+    ora staged+1
+    bne nonzerocommit
+    lda #0
+    sta $1e06
+    sta $1e1e
+    sta $1e1f
+    jmp cleanup
+nonzerocommit:
+    lda staged
+    sta dmacount
+    lda staged+1
+    sta dmacount+1
+commit:
+    lda #0
+    sta dmasrc
+    sta dmasrc+1
+    lda $1e0f
+    sta dmadstbank
+    lda #$0f
+    sta dmasrcbank
+    lda #$87
+    sta dmasrcmb
+    lda #0
+    sta dmadstmb
+    lda $1e10
+    sta dmadst
+    lda $1e11
+    sta dmadst+1
+    jsr dma
+    lda staged
+    sta $1e1e
+    lda staged+1
+    sta $1e1f
+    lda #0
+    sta $1e06
+    lda $1e0e
+    beq launch
+    jmp cleanup
+launch:
+    lda endaddress
+    sta $ae
+    sta $82
+    lda endaddress+1
+    sta $af
+    sta $83
+    ; Direct-mode SYS returns to the editor, which consumes RUN.
+    ldx #3
+keys:
+    lda runtext,x
+    sta $02b0,x
+    dex
+    bpl keys
+    lda #4
+    sta $d0
+    bra cleanup
+fail:
+    lda $d082
+    sta $1e09
+    lda #2
+    sta $1e06
+cleanup:
+    lda oldcontrol
+    and #$9f
+    sta $d080
+    lda olddmamb
+    sta $d704
+    lda olddma
+    sta $d703
+    lda $1e06
+    cmp #2
+    bne return
+    lda $1e0e
+    bne return
+    ldx #0
+errprint:
+    lda errtext,x
+    beq diagnostic
+    phx
+    jsr $ffd2
+    plx
+    inx
+    bra errprint
+diagnostic:
+    ldx #0
+diagloop:
+    lda $1e08,x
+    phx
+    jsr printhex
+    lda #32
+    jsr $ffd2
+    plx
+    inx
+    cpx #6
+    bne diagloop
+    lda #13
+    jsr $ffd2
+return:
+    plp
+    rts
+printhex:
+    pha
+    lsr
+    lsr
+    lsr
+    lsr
+    jsr nibble
+    pla
+    and #15
+nibble:
+    tax
+    lda hexchars,x
+    jmp $ffd2
+hexchars: !text "0123456789ABCDEF"
+skiphalf:
+    ldx #0
+skiploop:
+    lda $d087
+    inx
+    bne skiploop
+    rts
+wait:
+    ; Bounded wait; wall-clock duration depends on CPU speed.
+    ldx #0
+    ldy #0
+    lda #64
+    sta ticks
+waitloop:
+    bit $d082
+    bpl ready
+    dex
+    bne waitloop
+    dey
+    bne waitloop
+    dec ticks
+    bne waitloop
+    sec
+    rts
+ready:
+    clc
+    rts
+dma:
+    lda #0
+    sta $d703
+    sta $d702
+    sta $d704
+    lda #>dmalist
+    sta $d701
+    lda #<dmalist
+    sta $d705
+    rts
+dmalist:
+    !byte $80
+dmasrcmb: !byte 0
+    !byte $81
+dmadstmb: !byte 0
+    !byte 0
+    !byte 0
+dmacount: !word 0
+dmasrc: !word $1d02
+dmasrcbank: !byte 0
+dmadst: !word 0
+dmadstbank: !byte 4
+    !word 0
+runtext: !text "RUN"
+    !byte 13
+errtext: !text "D65 READ FAILED - PROGRAM UNCHANGED"
+    !byte 13
+    !text "CODE FDC MOUNT FORMAT TRACK SECTOR (HEX)"
+    !byte 13,0
+oldcontrol: !byte 0
+olddma: !byte 0
+olddmamb: !byte 0
+remain: !word 0
+checksum: !word 0
+staged: !word 0
+first: !byte 0
+blockcount: !byte 0
+ticks: !byte 0
+
+engine:
+    php
+    sei
+    cld
+    lda #0
+    sta $1e1e
+    sta $1e1f
+    lda $d703
+    sta olddma
+    lda $d704
+    sta olddmamb
+    lda $d080
+    sta oldcontrol
+    lda #$47
+    sta $d02f
+    lda #$53
+    sta $d02f
+    lda $d68b
+    sta $1e0a
+    lda $d68a
+    sta $1e0b
+    lda $1e00
+    sta $1e0c
+    lda $1e01
+    sta $1e0d
+    lda #1
+    sta $1e08
+    sta $1e06
+    lda $1e07
+    cmp #1
+    beq mounted
+    ; D68B bit 0 enables the image; bit 6 selects D65.
+    lda $d68b
+    and #$41
+    cmp #$41
+    beq mounted
+    jmp fail
+mounted:
+    lda #$02
+    sta $1e08
+    lda $d68a
+    and #$40
+    beq formatok
+    jmp fail
+formatok:
+    jsr lookup
+    bcc sizeok
+    jmp fail
+sizeok:
+    ; The staging area ends at $87FE000, below the catalogue. Limit both
+    ; raw and PRG reads to 57344 file bytes for a simple fail-closed bound.
+    lda #3
+    sta $1e08
+    lda $1e03
+    cmp #$e0
+    bcc filesizeok
+    bne oversized
+    lda $1e02
+    beq filesizeok
+oversized:
+    jmp fail
+filesizeok:
+    lda $1e02
+    sta remain
+    lda $1e03
+    sta remain+1
+    ora remain
+    bne nonempty
+    lda $1e0e
+    cmp #1
+    beq emptyraw
+    cmp #2
+    beq emptyraw
+    jmp fail
+emptyraw:
+    lda #0
+    sta staged
+    sta staged+1
+    sta checksum
+    sta checksum+1
+    jmp finished
+nonempty:
+    lda #0
+    sta checksum
+    sta checksum+1
+    sta staged
+    sta staged+1
+    lda #1
+    sta first
+    lda $1e0e
+    cmp #1
+    beq rawfile
+    cmp #2
+!ifdef COMPAT {
+    beq rawfile
+    cmp #5
+}
+    bne notraw
+rawfile:
+    lda #0
+    sta first
+notraw:
+    lda #4
+    sta $1e08
+    lda #$60
+    sta $d080
+    jsr wait
+    bcc spin
+    jmp fail
+spin:
+    lda #$05
+    sta $1e08
+    lda #$20
+    sta $d081
+    jsr wait
+    bcc next
+    jmp fail
+next:
+    lda #$06
+    sta $1e08
+    lda $1e00
+    beq badlink
+    cmp #81
+    bcs badlink
+    lda $1e01
+    cmp #120
+    bcc validlink
+badlink:
+    jmp fail
+validlink:
+    pha
+    lda $1e00
+    sta $1e0c
+    lda $1e01
+    sta $1e0d
+    pla
+    lsr
+    cmp #10
+    bcc front
+    sec
+    sbc #9
+    ldx #1
+    ldy #$68
+    bra geometry
+front:
+    clc
+    adc #1
+    ldx #0
+    ldy #$60
+geometry:
+    sta $d085
+    stx $d086
+    sty $d080
+    lda $1e00
+    sec
+    sbc #1
+    sta $d084
+    lda #7
+    sta $1e08
+    jsr wait
+    bcc reset
+    jmp fail
+reset:
+    lda #$08
+    sta $1e08
+    lda #1
+    sta $d081
+    jsr wait
+    bcc read
+    jmp fail
+read:
+    lda #$09
+    sta $1e08
+    lda #$40
+    sta $d081
+    jsr wait
+    bcc readok
+    jmp fail
+readok:
+    lda #$0a
+    sta $1e08
+    lda $d082
+    ; SD-backed images fill the 512-byte buffer before CPU consumption.
+    ; The core sets LOST when another byte arrives while DRQ is still set,
+    ; even though it stores that byte in the buffer. LOST alone is therefore
+    ; not fatal for this image-only buffered reader. Keep RNF/CRC fatal and
+    ; validate the complete chain, length, PRG address and checksum below.
+    and #$18
+    beq buffer
+    jmp fail
+buffer:
+    lda $1e01
+    and #1
+    beq take
+    jsr skiphalf
+take:
+    ldx #0
+copybuffer:
+    lda $d087
+    sta $1d00,x
+    inx
+    bne copybuffer
+    lda $1e01
+    and #1
+    bne links
+    jsr skiphalf
+links:
+    lda #$0b
+    sta $1e08
+    lda $1d00
+    sta $1e00
+    lda $1d01
+    sta $1e01
+    lda #254
+    ldx $1d00
+    bne gotcount
+    lda $1d01
+    bne terminal
+    jmp fail
+terminal:
+    sec
+    sbc #1
+gotcount:
+    sta blockcount
+    lda #$0c
+    sta $1e08
+    ; Reject blocks exceeding the declared remaining byte count.
+    lda remain+1
+    bne subtract
+    lda remain
+    cmp blockcount
+    bcs subtract
+    jmp fail
+subtract:
+    sec
+    lda remain
+    sbc blockcount
+    sta remain
+    lda remain+1
+    sbc #0
+    sta remain+1
+    lda #$0d
+    sta $1e08
+    lda remain+1
+    ; Terminal pointer must agree with the length, bounding cyclic chains.
+    ora remain
+    bne more
+    lda $1d00
+    beq checksumblock
+    jmp fail
+more:
+    lda $1d00
+    bne checksumblock
+    jmp fail
+checksumblock:
+    ldx #0
+sumloop:
+    cpx blockcount
+    beq summed
+    clc
+    lda checksum
+    adc $1d02,x
+    sta checksum
+    bcc sumcarry
+    inc checksum+1
+sumcarry:
+    inx
+    bra sumloop
+summed:
+    lda #2
+    sta dmasrc
+    lda blockcount
+    sta dmacount
+    lda first
+    beq stage
+    lda #$0e
+    sta $1e08
+    lda blockcount
+    cmp #2
+    bcs checkheader
+    jmp fail
+checkheader:
+    lda #$0f
+    sta $1e08
+    lda $1e0e
+    bne storedaddress
+    lda $1d02
+    cmp #1
+    bne headerbad
+    lda $1d03
+    cmp #$20
+    bne headerbad
+storedaddress:
+    lda $1d02
+    sta $1e10
+    lda $1d03
+    sta $1e11
+    bra headerok
+headerbad:
+    jmp fail
+headerok:
+    lda #0
+    sta first
+    lda #4
+    sta dmasrc
+    dec dmacount
+    dec dmacount
+stage:
+    lda dmacount
+    beq stagedone
+    lda #0
+    sta dmacount+1
+    sta dmasrcbank
+    lda #$1d
+    sta dmasrc+1
+    lda #$0f
+    sta dmadstbank
+    lda #$87
+    sta dmadstmb
+    lda #0
+    sta dmasrcmb
+    lda staged
+    sta dmadst
+    clc
+    adc dmacount
+    sta staged
+    lda staged+1
+    sta dmadst+1
+    adc #0
+    sta staged+1
+    jsr dma
+stagedone:
+    lda remain
+    ora remain+1
+    bne continue
+    jmp finished
+continue:
+    jmp next
+
+; All executable code remains in the documented $1600-$1CFF utility area.
+; Attic $87FE000-$87FFFFF holds the catalogue; $87F0000-$87FDFFF stages reads.
+; No ROM vectors or undocumented KERNAL variables are used by file service.
+lookup:
+    lda #$12
+    sta $1e08
+    lda $1e0e
+!ifdef COMPAT { cmp #6 } else { cmp #5 }
+    bcc commandok
+    sec
+    rts
+commandok:
+    lda #8
+    sta dmacount
+    lda #0
+    sta dmacount+1
+    sta dmasrc
+    lda #$e0
+    sta dmasrc+1
+    lda #$0f
+    sta dmasrcbank
+    lda #$87
+    sta dmasrcmb
+    lda #0
+    sta dmadstmb
+    lda #$40
+    sta dmadst
+    lda #$1e
+    sta dmadst+1
+    lda #0
+    sta dmadstbank
+    jsr dma
+    ldx #3
+signaturecheck:
+    lda $1e40,x
+    cmp signature,x
+    bne lookupbad
+    dex
+    bpl signaturecheck
+    lda $1e44
+    cmp #1
+    bne lookupbad
+    lda $1e45
+    sta entriesleft
+    lda $1e46
+    sta entriesleft+1
+    cmp #2
+    bcs lookupbad
+    cmp #1
+    bne countlow
+    lda entriesleft
+    cmp #40
+    bcs lookupbad
+countlow:
+    lda entriesleft
+    ora entriesleft+1
+    beq lookupbad
+    lda #8
+    sta catalogptr
+    lda #$e0
+    sta catalogptr+1
+    lda #0
+    sta currentindex
+    sta currentindex+1
+    lda $1e0e
+    bne lookupnext
+    sta $1e0f
+    bra lookupnext
+lookupbad:
+    sec
+    rts
+lookupnext:
+    lda catalogptr
+    sta dmasrc
+    lda catalogptr+1
+    sta dmasrc+1
+    lda #24
+    sta dmacount
+    jsr dma
+    lda $1e0e
+    cmp #2
+    beq matchname
+    cmp #3
+    beq matchname
+!ifdef COMPAT {
+    cmp #5
+    beq matchname
+}
+    lda currentindex
+    cmp $1e12
+    bne advance
+    lda currentindex+1
+    cmp $1e13
+    beq matched
+    bra advance
+matchname:
+    ldx #15
+matchloop:
+    lda $1e40,x
+    cmp $1e20,x
+    bne advance
+    dex
+    bpl matchloop
+    bra matched
+advance:
+    clc
+    lda catalogptr
+    adc #24
+    sta catalogptr
+    bcc pointerdone
+    inc catalogptr+1
+pointerdone:
+    inc currentindex
+    bne indexdone
+    inc currentindex+1
+indexdone:
+    lda entriesleft
+    bne decrem
+    dec entriesleft+1
+decrem:
+    dec entriesleft
+    lda entriesleft
+    ora entriesleft+1
+    bne lookupnext
+    lda #$13
+    sta $1e08
+    sec
+    rts
+matched:
+    ldx #5
+parameters:
+    lda $1e50,x
+    sta $1e00,x
+    dex
+    bpl parameters
+    lda $1e0e
+    cmp #1
+    beq lookupok
+    cmp #2
+    beq lookupok
+    lda $1e56
+    cmp #2
+    beq lookupok
+    sec
+    rts
+lookupok:
+    clc
+    rts
+; Keep all writes within BASIC program/data RAM in bank 0 or 1. This
+; protects this driver, the ROM, colour window, catalogue, and staging.
+destination:
+    lda #$14
+    sta $1e08
+    lda $1e0f
+    cmp #2
+    bcs destbad
+    lda $1e11
+    cmp #$20
+    bcc destbad
+    clc
+    lda $1e10
+    adc staged
+    sta endaddress
+    lda $1e11
+    adc staged+1
+    sta endaddress+1
+    bcs destbad
+    cmp #$f7
+    bcc destok
+    bne destbad
+    lda endaddress
+    bne destbad
+destok:
+    clc
+    rts
+destbad:
+    sec
+    rts
+signature: !text "D65R"
+entriesleft: !word 0
+currentindex: !word 0
+catalogptr: !word 0
+endaddress: !word 0
+!if * > $1d00 { !error "Driver exceeds utility code area" }
+
+!ifdef COMPAT { !if * > $1c40 { !error "Compatibility reader overlaps gateway" } }

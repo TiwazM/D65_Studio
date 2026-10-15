@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.52s
+     Running unittests src\lib.rs (target\debug\deps\d65_studio-632280f649050a2f.exe)
+
+running 1 test
+Regular local file, FILE_FLAG_WRITE_THROUGH, 5570560 bytes: chunk=512, writes=10880, write+flush=0.588s, write+flush+verified-read=0.606s
+Regular local file, FILE_FLAG_WRITE_THROUGH, 5570560 bytes: chunk=262144, writes=22, write+flush=0.004s, write+flush+verified-read=0.006s
+test direct_sd::tests::native_file_transfer_benchmark ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.62s
+

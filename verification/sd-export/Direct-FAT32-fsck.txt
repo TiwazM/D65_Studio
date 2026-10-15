@@ -1,0 +1,5 @@
+** work/sd-export/direct-fat32-native.img
+** Phase 1 - Preparing FAT
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Orphan Clusters
+Warning: 2 files, 255856 KiB free (63964 clusters)
