@@ -58,6 +58,8 @@ struct Studio {
     id: String,
     format: Format,
     big: bool,
+    /// START bytes last checked against a freshly generated START, and the verdict.
+    start_check: Option<(Vec<u8>, bool)>,
     dialog: Option<(Pick, Dialog)>,
     rename: String,
     edit: String,
@@ -88,6 +90,7 @@ impl Default for Studio {
             id: "65".into(),
             format: Format::D65,
             big: false,
+            start_check: None,
             dialog: None,
             rename: String::new(),
             edit: String::new(),
@@ -136,7 +139,7 @@ impl Studio {
                     self.report(
                         Ok(()),
                         if big {
-                            "Large D65 created. Add files here; START and its menu are rebuilt on every change."
+                            "Resident D65 created. Add files here; START and its menu are rebuilt on every change."
                         } else {
                             "New image created."
                         },
@@ -145,6 +148,21 @@ impl Studio {
                 Err(e) => self.report(Err(e), ""),
             },
         }
+    }
+    /// Whether a resident image's START is older than this app would generate.
+    /// Regenerating is a full repack, so the verdict is cached per START bytes.
+    fn start_stale(&mut self, disk: &Disk) -> bool {
+        let Some(start) = disk.entries().ok().and_then(|e| e.into_iter().next()) else {
+            return false;
+        };
+        let Ok(bytes) = disk.read(&start) else {
+            return false;
+        };
+        if self.start_check.as_ref().map(|(b, _)| b) != Some(&bytes) {
+            let stale = d65_studio::launcher::start_outdated(disk).unwrap_or(false);
+            self.start_check = Some((bytes, stale));
+        }
+        self.start_check.as_ref().unwrap().1
     }
     fn report(&mut self, r: Result<()>, ok: &str) {
         match r {
@@ -168,7 +186,7 @@ impl Studio {
                 self.selected = None;
                 self.status = warning.unwrap_or_else(|| {
                     if big {
-                        return "Large D65 opened. Edits save automatically and rebuild START; the first edit creates a backup.".into();
+                        return "Resident D65 opened. Edits save automatically and rebuild START; the first edit creates a backup.".into();
                     }
                     "Image opened. Edits save automatically; the first edit creates a backup."
                         .into()
@@ -386,7 +404,7 @@ impl Studio {
             self.readonly = true;
             self.merge_open = false;
         });
-        self.report(result, if launch && compat { "LOAD-compatible launch disk created for ROM 920413. Mount in drive 8 and RUN \"START\". Experimental; hardware test pending." } else if launch { "Resident launch disk created. Mount in drive 8 and RUN \"START\". Direct-SD reader; hardware test pending." } else { "Experimental merge created and verified offline. ROM 920413 cannot load later banks; a modified ROM or custom loader is required. Read-only." });
+        self.report(result, if launch && compat { "LOAD-compatible launch disk created for ROM 920413. Mount in drive 8 and RUN \"START\". Experimental; hardware test pending." } else if launch { "Resident launch disk created. Mount in drive 8 and RUN \"START\". Editable here; START is rebuilt on every change." } else { "Experimental merge created and verified offline. ROM 920413 cannot load later banks; a modified ROM or custom loader is required. Read-only." });
     }
     fn start_mount(&mut self) {
         #[cfg(windows)]
@@ -589,6 +607,7 @@ impl eframe::App for Studio {
             let writable = disk.validate_writable();
             let big = d65_studio::launcher::is_editable(&disk);
             let can_edit = (writable.is_ok() || big) && !mounted;
+            let start_stale = big && self.start_stale(&disk);
             egui::SidePanel::left("disk").exact_width(248.0).frame(egui::Frame::new().fill(Color32::from_rgb(19,28,35)).inner_margin(20.0)).show(ctx,|ui|{ egui::ScrollArea::vertical().id_salt("sidebar_scroll").show(ui,|ui|{
                 ui.add_space(8.0);ui.label(RichText::new(disk.format.ext().to_uppercase()).size(44.0).color(TEAL).strong());ui.heading(disk.label());ui.label(format!("DISK ID  {}",disk.disk_id()));ui.add_space(24.0);
                 if writable.is_ok() {
@@ -599,10 +618,16 @@ impl eframe::App for Studio {
                     ui.add(egui::ProgressBar::new(used as f32/total as f32).fill(TEAL));
                     ui.label(format!("{:.2} MB used of {:.2} MB",used as f32*254.0/1_000_000.0,total as f32*254.0/1_000_000.0));
                     ui.label(format!("{:.0} KB available when rebuilding",(total-used) as f32*254.0/1000.0));
-                    ui.label(if big { "Includes START. Add, rename or delete files here; START is rebuilt each time." } else { "Includes START. Rebuild from your source images to add files." });
+                    ui.label("Includes START. Add, rename or delete files here; START is rebuilt each time.");
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(if start_stale { "START is older than this version of D65 Studio." } else { "START is current for this version of D65 Studio." }).small().color(if start_stale { Color32::from_rgb(215,184,117) } else { Color32::GRAY }));
+                    if ui.add_enabled(can_edit, egui::Button::new("Update START")).clicked() {
+                        let r = self.store.as_ref().unwrap().lock().unwrap().change(|d| d65_studio::launcher::update_start(d));
+                        self.report(r, "START replaced with the current reader and menu. Files are unchanged.");
+                    }
                 } else { ui.label(RichText::new("READ-ONLY INSPECTION").color(TEAL));ui.label("Free space is not available for this layout."); }
                 ui.add_space(14.0);ui.label(format!("Container: {} bytes",disk.bytes.len()));
-                if disk.format==Format::D65{ui.add_space(8.0);ui.label(RichText::new("Standard images are editable. Experimental merges are read-only. Later banks require the START custom reader or compatible software.").color(Color32::from_rgb(215,184,117)));}
+                if disk.format==Format::D65{ui.add_space(8.0);ui.label(RichText::new("Standard and resident images are editable. Experimental merges are read-only. Later banks require the START reader or compatible software.").color(Color32::from_rgb(215,184,117)));}
                 ui.separator();ui.label(RichText::new(if cfg!(windows) { "EXPLORER DRIVE" } else { "FINDER VOLUME" }).small().color(Color32::GRAY));
                 if mounted{
                     ui.label("Mounted — editing in file manager");
@@ -814,7 +839,7 @@ impl eframe::App for Studio {
                     ui.checkbox(&mut self.load_compatibility, "Experimental LOAD compatibility (ROM 920413)");
                 });
                 ui.label("Compatibility mode redirects literal-name LOAD/VERIFY from drive 8; no OPEN channels, custom disk loaders or writes. Reserves 8 KB more Attic RAM.");
-                ui.label("Without compatibility mode, extra file reads use the documented resident API. Ordinary LOAD/OPEN calls are not redirected. The result is read-only; edit sources and rebuild.");
+                ui.label("Without compatibility mode, extra file reads use the documented resident API. Ordinary LOAD/OPEN calls are not redirected. The result can be edited here; START is rebuilt on every change.");
                 ui.horizontal(|ui| {
                     if ui.button("Choose D81 images…").clicked() { self.merge(); }
                     if ui.button("Cancel").clicked() { self.merge_open=false; }
@@ -921,8 +946,9 @@ impl eframe::App for Studio {
 fn cli(args: &[String]) -> Result<()> {
     match args.first().map(String::as_str){
         Some("create") if args.len()==4&&args[1].eq_ignore_ascii_case("d65big")=>{Store::create(Path::new(&args[2]),d65_studio::launcher::create_editable(&args[3],"65")?)?;println!("Large D65 with START resident reader created. Use add to put files on it; START is rebuilt each time.");},
+        Some("update-start") if args.len()==2=>{let mut s=Store::open(Path::new(&args[1]))?;if !d65_studio::launcher::start_outdated(&s.disk)?{println!("START is already current.");}else{s.change(|d|d65_studio::launcher::update_start(d))?;println!("START replaced with the current reader and menu. Files are unchanged; a backup was kept beside the image.");}},
         Some("create") if args.len()==4=>{let format=if args[1].eq_ignore_ascii_case("d81"){Format::D81}else if args[1].eq_ignore_ascii_case("d65"){Format::D65}else{return Err("Format must be d65 or d81".into())};Store::create(Path::new(&args[2]),Disk::create(format,&args[3],"65")?)?;},
-        Some("list") if args.len()==2=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;println!("{} [{}] {} bytes",d.label(),d.disk_id(),d.bytes.len());for e in d.entries()?{println!("{:5} {:16} {}",e.blocks,e.name,e.type_name())}match d.resident_space().filter(|_|d65_studio::launcher::is_editable(&d)){Some((used,total))=>println!("{} blocks free (resident reader, START included)",total-used),None=>{println!("{} blocks free",d.free_blocks());d.validate_writable()?;}}},
+        Some("list") if args.len()==2=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;println!("{} [{}] {} bytes",d.label(),d.disk_id(),d.bytes.len());for e in d.entries()?{println!("{:5} {:16} {}",e.blocks,e.name,e.type_name())}match d.resident_space().filter(|_|d65_studio::launcher::is_editable(&d)){Some((used,total))=>{println!("{} blocks free (resident reader, START included)",total-used);println!("START {}",if d65_studio::launcher::start_outdated(&d)?{"is older than this version of D65 Studio: run update-start"}else{"is current"});}None=>{println!("{} blocks free",d.free_blocks());d.validate_writable()?;}}},
         Some("add") if args.len()==4=>{let mut s=Store::open(Path::new(&args[1]))?;let data=fs::read(&args[2]).map_err(|e|e.to_string())?;let kind=match Path::new(&args[2]).extension().and_then(|x|x.to_str()).unwrap_or("").to_ascii_lowercase().as_str(){"seq"=>1,"usr"=>3,_=>2};s.change(|d|d.put(&args[3],kind,&data,false))?;},
         Some("launch" | "launch-compat") if args.len()>=3=>{let sources:Result<Vec<_>>=args[2..].iter().map(|p|Disk::parse(fs::read(p).map_err(|e|e.to_string())?)).collect();Store::create(Path::new(&args[1]),d65_studio::launcher::build_with_compat(&sources?, args[0]=="launch-compat")?)?;println!("Resident launch disk created. RUN \"START\" from drive 8. About 5.4 MB minus START; 55,041-byte program limit. Direct-SD reader: hardware validation pending.");},
         Some("merge") if args.len()>=4=>{let sources:Result<Vec<_>>=args[2..].iter().map(|p|Disk::parse(fs::read(p).map_err(|e|e.to_string())?)).collect();Store::create(Path::new(&args[1]),Disk::merge_d81(&sources?)?)?;println!("Experimental merge verified offline. Read-only; ROM 920413 cannot load later banks. A modified ROM or custom loader is required.");},
@@ -935,7 +961,7 @@ fn cli(args: &[String]) -> Result<()> {
         Some("serve") if args.len()==2=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let b=d65_studio::mount::bridge(s,false)?;println!("{}",b.url);loop{std::thread::sleep(std::time::Duration::from_secs(1));}},
         #[cfg(any(target_os="macos", windows))]
         Some("mount") if args.len()==3||args.len()==4=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let ro=args.get(3).map(String::as_str)==Some("--read-only");d65_studio::mount::start(s,Path::new(&args[2]),ro)?.join().map_err(|_|"Mount worker panicked")??;},
-        _=>return Err("Usage: d65-studio [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
+        _=>return Err("Usage: d65-studio [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | update-start IMAGE | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
     }
     Ok(())
 }

@@ -44,7 +44,7 @@ d65-studio create d65big BIG.d65 "MY BIG DISK"
 d65-studio add BIG.d65 GAME.prg GAME
 ```
 
-**Important:** Compilations built with **Merge D81s…** are **read-only**, including when browsed through Explorer/Finder. To change their contents, edit the source D81 images and rebuild the compilation. Editing ordinary, non-compilation disk images is supported separately.
+Compilations built with **Merge D81s…** can be edited the same way: adding, renaming or deleting a file repacks the image and rebuilds `START`. They stay read-only when browsed through Explorer/Finder. When a newer D65 Studio ships a changed resident reader, the sidebar says the image's `START` is older than the app; **Update START** (or `d65-studio update-start IMAGE`) replaces `START` and the catalogue while leaving every file byte for byte as it was, so there is no need to rebuild or re-export a whole disk for a reader fix. A backup of the original is kept beside the image.
 
 ## How the experimental loader works
 

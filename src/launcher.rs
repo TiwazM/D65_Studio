@@ -126,19 +126,12 @@ pub fn build_with_compat(sources: &[Disk], compatibility: bool) -> Result<Disk> 
     if programs == 0 || programs > 99 {
         return Err("The menu needs 1–99 MEGA65 BASIC-entry PRGs at $2001, at most 55,041 bytes each. Other files are retained for the resident reader.".into());
     }
-    pack(&files, "D65 RESIDENT", "65", compatibility, false)
+    pack(&files, "D65 RESIDENT", "65", compatibility)
 }
 
 /// Lay out START, the catalogue and every file in a fresh resident image.
-/// `editable` marks images created empty in D65 Studio, whose contents are
-/// changed by repacking rather than by DOS-style allocation.
-fn pack(
-    files: &[(Entry, Vec<u8>)],
-    label: &str,
-    id: &str,
-    compatibility: bool,
-    editable: bool,
-) -> Result<Disk> {
+/// Resident images are changed by repacking, never by DOS-style allocation.
+fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) -> Result<Disk> {
     if files.len() > 295 {
         return Err("Too many files: at most 295 files plus START.".into());
     }
@@ -241,7 +234,6 @@ fn pack(
     disk.bytes[h + 56..h + 58].copy_from_slice(&(needed as u16).to_le_bytes());
     disk.bytes[h + 58..h + 60].copy_from_slice(&(start_chain.len() as u16).to_le_bytes());
     disk.bytes[h + 60] = u8::from(compatibility);
-    disk.bytes[h + 61] = u8::from(editable);
     let entries = disk.entries()?;
     if entries.len() != files.len() + 1 || disk.read(&entries[0])? != starter {
         return Err("Launch directory verification failed.".into());
@@ -270,22 +262,54 @@ fn is_menu_program(entry: &Entry, data: &[u8]) -> bool {
     entry.kind == 2 && valid_basic(data)
 }
 
-/// An empty resident-reader D65 that D65 Studio can edit: every change
-/// repacks the files and regenerates START and its catalogue.
+/// An empty resident-reader D65: every change repacks the files and
+/// regenerates START and its catalogue.
 pub fn create_editable(label: &str, id: &str) -> Result<Disk> {
     if encode_name(id, 2)?.len() != 2 {
         return Err("Disk ID must be exactly two characters.".into());
     }
-    pack(&[], label, id, false, true)
+    pack(&[], label, id, false)
 }
 
+/// Any resident-reader compilation can be repacked from its own directory,
+/// whether it was merged from D81s or created empty.
 pub fn is_editable(disk: &Disk) -> bool {
     let Ok(h) = disk.offset(40, 0) else {
         return false;
     };
-    disk.format == Format::D65
-        && disk.bytes[h + 48..h + 56] == *b"D65RES01"
-        && disk.bytes[h + 61] == 1
+    disk.format == Format::D65 && disk.bytes[h + 48..h + 56] == *b"D65RES01"
+}
+
+fn compatibility(disk: &Disk) -> Result<bool> {
+    Ok(disk.bytes[disk.offset(40, 0)? + 60] == 1)
+}
+
+/// The same files laid out again by this version of D65 Studio, with a
+/// freshly generated START.
+fn regenerate(disk: &Disk) -> Result<Disk> {
+    pack(
+        &contents(disk)?,
+        &disk.label(),
+        &disk.disk_id(),
+        compatibility(disk)?,
+    )
+}
+
+/// Replace START (and its embedded reader and catalogue) with the current
+/// one. Files are kept byte for byte; only their placement may move.
+pub fn update_start(disk: &mut Disk) -> Result<()> {
+    if !is_editable(disk) {
+        return Err("Only resident-reader compilations have a START to update.".into());
+    }
+    *disk = regenerate(disk)?;
+    Ok(())
+}
+
+/// True when START differs from what this version of D65 Studio generates,
+/// for example after a reader fix.
+pub fn start_outdated(disk: &Disk) -> Result<bool> {
+    let fresh = regenerate(disk)?;
+    Ok(disk.read(&disk.entries()?[0])? != fresh.read(&fresh.entries()?[0])?)
 }
 
 /// Every file except START, with its bytes, in directory order.
@@ -307,16 +331,9 @@ fn contents(disk: &Disk) -> Result<Vec<(Entry, Vec<u8>)>> {
 
 fn repack(disk: &mut Disk, files: &[(Entry, Vec<u8>)]) -> Result<()> {
     if !is_editable(disk) {
-        return Err("Only resident images created in D65 Studio can be edited.".into());
+        return Err("Only resident-reader compilations can be repacked.".into());
     }
-    let h = disk.offset(40, 0)?;
-    *disk = pack(
-        files,
-        &disk.label(),
-        &disk.disk_id(),
-        disk.bytes[h + 60] == 1,
-        true,
-    )?;
+    *disk = pack(files, &disk.label(), &disk.disk_id(), compatibility(disk)?)?;
     Ok(())
 }
 
@@ -903,7 +920,7 @@ mod editable_tests {
         assert!(valid_basic(&start));
         assert!(start.windows(11).any(|b| b == b"NO PROGRAMS"));
         assert!(disk.validate_writable().is_err());
-        assert!(!is_editable(
+        assert!(is_editable(
             &build(&[{
                 let mut d = Disk::create(Format::D81, "SRC", "65").unwrap();
                 d.put("DEMO", 2, &PROGRAM, false).unwrap();
@@ -944,6 +961,40 @@ mod editable_tests {
         let (used, total) = disk.resident_space().unwrap();
         assert_eq!(total, crate::disk::PAYLOAD_BLOCKS);
         assert_eq!(used, es.iter().map(|e| e.blocks).sum::<usize>());
+    }
+    #[test]
+    fn merged_compilations_are_editable_and_start_can_be_updated() {
+        let mut source = Disk::create(Format::D81, "SRC", "65").unwrap();
+        source.put("DEMO", 2, &PROGRAM, false).unwrap();
+        source.put("DATA", 1, &vec![0x31; 70_000], false).unwrap();
+        let mut disk = build_with_compat(&[source], true).unwrap();
+        assert!(is_editable(&disk));
+        assert!(!start_outdated(&disk).unwrap());
+        disk.put("EXTRA", 2, &PROGRAM, false).unwrap();
+        let es = disk.entries().unwrap();
+        assert_eq!(
+            es.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+            ["START", "DEMO", "DATA", "EXTRA"]
+        );
+        assert!(disk.read(&es[0]).unwrap().windows(5).any(|b| b == b"EXTRA"));
+        // An older START (here: one byte of its DATA altered) is detected and replaced.
+        let p = disk.offset(es[0].start.0, es[0].start.1).unwrap() + 100;
+        disk.bytes[p] ^= 1;
+        assert!(start_outdated(&disk).unwrap());
+        update_start(&mut disk).unwrap();
+        assert!(!start_outdated(&disk).unwrap());
+        let es = disk.entries().unwrap();
+        assert_eq!(es.len(), 4);
+        assert_eq!(disk.read(&es[2]).unwrap(), vec![0x31; 70_000]);
+        assert_eq!(disk.read(&es[3]).unwrap(), PROGRAM);
+        assert_eq!(
+            disk.bytes[disk.offset(40, 0).unwrap() + 60],
+            1,
+            "compatibility flag kept"
+        );
+        assert!(valid_basic(&disk.read(&es[0]).unwrap()));
+        let mut plain = Disk::create(Format::D65, "PLAIN", "65").unwrap();
+        assert!(update_start(&mut plain).is_err());
     }
     #[test]
     fn store_edits_and_reopens_large_disk() {

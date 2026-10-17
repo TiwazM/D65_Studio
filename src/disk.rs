@@ -405,11 +405,7 @@ impl Disk {
     pub fn validate_writable(&self) -> Result<()> {
         let header = self.offset(40, 0)?;
         if self.bytes[header + 48..header + 56] == *b"D65RES01" {
-            return Err(if crate::launcher::is_editable(self) {
-                "Large D65 with START resident reader: edit it in D65 Studio; START is rebuilt on every change.".into()
-            } else {
-                "Resident-reader compilation: read-only. Rebuild from the source D81 images to change its contents.".into()
-            });
+            return Err("Resident-reader compilation: edit it in D65 Studio, which rebuilds START on every change.".into());
         }
         let mut occupied = HashSet::from([(40, 0), (40, 1), (40, 2)]);
         let id = self.offset(40, 0)? + 22;
