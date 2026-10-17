@@ -17,6 +17,8 @@ use std::{
     process::{Command, Stdio},
 };
 
+const REMOVABLE_ACCESS: &str = "macOS blocked D65 Studio from the SD card. Open System Settings › Privacy & Security › Files & Folders and turn on Removable Volumes for D65 Studio (or add D65 Studio to Full Disk Access), then export again.";
+
 fn command(program: &str, args: &[&str]) -> Result<Vec<u8>> {
     let out = Command::new(program)
         .args(args)
@@ -191,6 +193,16 @@ pub fn export(disk: &Disk, destination: &Path) -> Result<ExportReport> {
             .ok_or("Choose the card's root folder")?,
     )
     .map_err(|e| e.to_string())?;
+    // macOS checks the Removable Volumes permission of the app that started the
+    // privileged helper before it may open the card's raw device. Listing the
+    // card here, from D65 Studio itself, makes macOS ask for that permission.
+    fs::read_dir(&folder).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            REMOVABLE_ACCESS.to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
     let (id, mount) = inspect(folder.to_str().ok_or("Invalid destination path")?)?;
     if mount.as_ref() != Some(&folder) {
         return Err(
@@ -296,7 +308,23 @@ impl Device for Partition {
             .map_err(|e| e.to_string())
     }
     fn sync(&mut self) -> Result<()> {
-        self.file.sync_all().map_err(|e| e.to_string())
+        // File::sync_all uses F_FULLFSYNC, which raw disk nodes reject with
+        // ENOTTY. Raw writes bypass the buffer cache; flush the device's own
+        // write cache instead (sys/disk.h DKIOCSYNCHRONIZECACHE, _IO('d', 22)).
+        if unsafe { libc::ioctl(self.file.as_raw_fd(), 0x20006416) } == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        if !matches!(error.raw_os_error(), Some(libc::ENOTTY | libc::ENOTSUP)) {
+            return Err(format!("Card cache flush failed: {error}"));
+        }
+        if unsafe { libc::fsync(self.file.as_raw_fd()) } != 0 {
+            return Err(format!(
+                "Card flush failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        Ok(())
     }
     fn read_sectors(&mut self, s: u64, bytes: &mut [u8]) -> Result<()> {
         if bytes.is_empty()
@@ -429,7 +457,13 @@ pub fn helper(args: &[String]) -> Result<String> {
             .write(true)
             .custom_flags(libc::O_EXCL | libc::O_NOFOLLOW)
             .open(&path)
-            .map_err(|e| format!("Cannot exclusively open the unmounted card: {e}"))?;
+            .map_err(|e| {
+                if e.raw_os_error() == Some(libc::EPERM) {
+                    REMOVABLE_ACCESS.to_string()
+                } else {
+                    format!("Cannot exclusively open the unmounted card: {e}")
+                }
+            })?;
         if !file
             .metadata()
             .map_err(|e| e.to_string())?
@@ -557,6 +591,40 @@ mod tests {
                 Some(fs::canonicalize(path).unwrap())
             );
         }
+    }
+    /// Full raw export through the macOS Partition adapter. Point it at the
+    /// raw node of an attached scratch disk image, never at a real card:
+    /// `D65_TEST_RAW_DEVICE=/dev/rdiskNs1 cargo test -- --ignored raw_device`.
+    #[test]
+    #[ignore]
+    fn exports_through_raw_device() {
+        let path = std::env::var("D65_TEST_RAW_DEVICE").unwrap();
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_EXCL | libc::O_NOFOLLOW)
+            .open(&path)
+            .unwrap();
+        let mut count = 0u64;
+        assert_eq!(
+            unsafe { libc::ioctl(file.as_raw_fd(), 0x40086419, &mut count) },
+            0
+        );
+        let mut partition = Partition {
+            file,
+            sectors: count,
+        };
+        partition.sync().unwrap();
+        let mut disk = Disk::create(crate::disk::Format::D65, "RAW TEST", "65").unwrap();
+        disk.put("HELLO", 1, b"raw export", false).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path().join("metadata.journal");
+        let boot = partition.read(0).unwrap();
+        let receipt = fat_export::export(&mut partition, "RAWTEST.D65", &disk, |p| {
+            save_journal(&journal, count, &boot, p)
+        })
+        .unwrap();
+        assert_eq!(receipt.bytes, disk.bytes.len());
     }
     #[test]
     fn validates_devices_and_quotes_without_shell_expansion() {

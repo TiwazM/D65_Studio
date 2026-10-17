@@ -420,6 +420,35 @@ pub fn available() -> Result<()> {
         Err("The built-in macOS WebDAV filesystem is unavailable.".into())
     }
 }
+/// A fresh, empty mount point made by D65 Studio, so mounting works like a
+/// disk image: no folder to choose. mount_webdav needs an existing directory.
+#[cfg(target_os = "macos")]
+pub fn new_mountpoint(label: &str) -> Result<std::path::PathBuf> {
+    let name: String = label
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == ' ' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let p = std::env::temp_dir().join("D65 Studio").join(format!(
+        "{} {}",
+        name.trim(),
+        &uuid::Uuid::new_v4().simple().to_string()[..8]
+    ));
+    std::fs::create_dir_all(&p).map_err(|e| e.to_string())?;
+    Ok(p)
+}
+/// Remove a mount point made by `new_mountpoint` once the volume is gone.
+#[cfg(target_os = "macos")]
+pub fn remove_mountpoint(p: &Path) {
+    if p.starts_with(std::env::temp_dir().join("D65 Studio")) {
+        let _ = std::fs::remove_dir(p);
+    }
+}
 #[cfg(target_os = "macos")]
 pub fn start(store: Shared, mountpoint: &Path, readonly: bool) -> Result<JoinHandle<Result<()>>> {
     available()?;
@@ -431,8 +460,9 @@ pub fn start(store: Shared, mountpoint: &Path, readonly: bool) -> Result<JoinHan
     {
         return Err("Choose an empty folder as the mount point.".into());
     }
+    // The mount table lists resolved paths (/private/var, not /var).
+    let p = std::fs::canonicalize(mountpoint).map_err(|e| e.to_string())?;
     let bridge = bridge(store, readonly)?;
-    let p = mountpoint.to_path_buf();
     Ok(std::thread::spawn(move || {
         let mut cmd = std::process::Command::new("/sbin/mount_webdav");
         cmd.arg("-S").arg("-v").arg("D65 Studio");
@@ -451,6 +481,7 @@ pub fn start(store: Shared, mountpoint: &Path, readonly: bool) -> Result<JoinHan
                 out.status
             ));
         }
+        let _ = std::process::Command::new("/usr/bin/open").arg(&p).spawn();
         loop {
             let mounts = std::process::Command::new("/sbin/mount")
                 .output()

@@ -25,7 +25,6 @@ enum Pick {
     Sd(Disk, PathBuf),
     MergeSources,
     MergeSave(Disk, bool, bool),
-    Mount,
     Create(Disk),
 }
 fn one(f: impl Future<Output = Option<rfd::FileHandle>> + 'static) -> Dialog {
@@ -127,7 +126,6 @@ impl Studio {
             Pick::Sd(..) => {}
             Pick::MergeSources => self.merge_paths(paths),
             Pick::MergeSave(disk, launch, compat) => self.merge_save(disk, launch, compat, first),
-            Pick::Mount => self.mount_at(first),
             Pick::Create(d) => match Store::create(&first, d) {
                 Ok(s) => {
                     let big = d65_studio::launcher::is_editable(&s.disk);
@@ -419,12 +417,11 @@ impl Studio {
                 self.report(Err(e), "");
                 return;
             }
-            self.ask(
-                Pick::Mount,
-                one(rfd::AsyncFileDialog::new()
-                    .set_title("Choose an EMPTY folder for the Finder volume")
-                    .pick_folder()),
-            );
+            let label = self.store.as_ref().unwrap().lock().unwrap().disk.label();
+            match d65_studio::mount::new_mountpoint(&label) {
+                Ok(p) => self.mount_at(p),
+                Err(e) => self.report(Err(e), ""),
+            }
         }
         #[cfg(not(any(target_os="macos", windows)))] self.report(Err("file manager mounting is available on macOS. Windows drive mounting is not implemented yet.".into()),"");
     }
@@ -435,9 +432,12 @@ impl Studio {
             Ok(h) => {
                 self.mount_thread = Some(h);
                 self.mountpoint = Some(p);
-                self.report(Ok(()),"Mount requested. The volume will appear in file manager; eject it before editing here.")
+                self.report(Ok(()),"Mounting. The D65 Studio volume opens in Finder; eject it before editing here.")
             }
-            Err(e) => self.report(Err(e), ""),
+            Err(e) => {
+                d65_studio::mount::remove_mountpoint(&p);
+                self.report(Err(e), "")
+            }
         }
     }
 }
@@ -504,6 +504,10 @@ impl eframe::App for Studio {
                 .unwrap()
                 .join()
                 .unwrap_or_else(|_| Err("Mount worker stopped unexpectedly.".into()));
+            #[cfg(target_os = "macos")]
+            if let Some(p) = &self.mountpoint {
+                d65_studio::mount::remove_mountpoint(p);
+            }
             self.mountpoint = None;
             self.report(r, "file manager volume ejected. Image saved.");
         }
@@ -605,7 +609,7 @@ impl eframe::App for Studio {
                     if ui.button("Eject volume").clicked(){#[cfg(any(target_os="macos", windows))] {let r=d65_studio::mount::unmount(self.mountpoint.as_ref().unwrap());self.report(r,"Eject requested.");}}
                     if ui.button(if cfg!(windows) { "Show in Explorer" } else { "Show in Finder" }).clicked(){#[cfg(any(target_os="macos", windows))] {let _=std::process::Command::new(if cfg!(windows) { "explorer.exe" } else { "open" }).arg(if cfg!(windows) { PathBuf::from(format!("{}\\", self.mountpoint.as_ref().unwrap().display())) } else { self.mountpoint.as_ref().unwrap().clone() }).spawn();}}
                 }else{
-                    if writable.is_err() { self.readonly=true; } ui.add_enabled(writable.is_ok(),egui::Checkbox::new(&mut self.readonly,"Mount read-only"));if ui.add_enabled(!self.new_open&&!self.editor_open&&!self.delete_open,egui::Button::new(if cfg!(windows) { "Mount in Explorer…" } else { "Mount in Finder…" })).clicked(){self.start_mount()}
+                    if writable.is_err() { self.readonly=true; } ui.add_enabled(writable.is_ok(),egui::Checkbox::new(&mut self.readonly,"Mount read-only"));if ui.add_enabled(!self.new_open&&!self.editor_open&&!self.delete_open,egui::Button::new(if cfg!(windows) { "Mount in Explorer…" } else { "Mount in Finder" })).clicked(){self.start_mount()}
                     ui.label(RichText::new(if cfg!(windows) { "Built-in Windows WebClient · no driver installation" } else { "Built-in macOS connection · no driver needed" }).small().color(TEAL));
                 }
                 ui.add_space(10.0);ui.label(RichText::new("Use .prg, .seq or .usr files with names up to 16 characters. The disk has a flat directory.").small());
