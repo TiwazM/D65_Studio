@@ -3,3 +3,14 @@ PASS: 114 CPU/SD cases with /home/claude/d65/launcher/reader.bin base 0
 PASS: 114 CPU/SD cases with /home/claude/d65/launcher/reader.bin base 0xFFFFD000
 PASS: 114 CPU/SD cases with /home/claude/d65/launcher/reader-compat.bin base 0x7FFFFFF0
 PASS: 114 CPU/SD cases with /home/claude/d65/launcher/reader-compat.bin base 0x123456
+
+17 October 2026, after the $D689 buffer-select fix (harness models the bit):
+FAIL GAME00 mode 0 with the previous reader.bin (stage 0F, as on hardware)
+PASS: 114 CPU/SD cases with launcher/reader.bin base 0x123456
+PASS: 114 CPU/SD cases with launcher/reader.bin base 0
+PASS: 114 CPU/SD cases with launcher/reader.bin base 0xFFFFD000
+PASS: 114 CPU/SD cases with launcher/reader.bin base 0x7FFFFFF0
+PASS: 114 CPU/SD cases with launcher/reader-compat.bin base 0x123456
+PASS: 114 CPU/SD cases with launcher/reader-compat.bin base 0
+PASS: 114 CPU/SD cases with launcher/reader-compat.bin base 0xFFFFD000
+PASS: 114 CPU/SD cases with launcher/reader-compat.bin base 0x7FFFFFF0

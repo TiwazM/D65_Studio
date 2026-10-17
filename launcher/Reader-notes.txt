@@ -14,6 +14,10 @@ physical sectors per track). It adds the image sector, (track-1)*128 +
 sector/2, to the mounted image's start sector in $D68C-$D68F, reads that SD
 sector with command $02 at $D680, and DMAs the wanted half of the sector buffer
 at $FFD6E00. Hyppo only mounts contiguous images, so this addressing is exact.
+$FFD6E00 shows the SD buffer only while $D689 bit 7 is set; with it clear (as
+Hyppo leaves it after mounting) the F011 buffer appears there instead. The
+reader sets the bit on entry and restores the old value on exit. Found on a
+MEGA65 R6 (core 0.97, ROM 920413) on 17 October 2026 and fixed the same day.
 Standard BAM bits are marked unavailable and the app treats the compilation
 read-only. Mailbox offset 9 now holds the SD controller status on failure.
 
@@ -27,4 +31,6 @@ Then rebuild the Rust application to embed the new bytes.
 Historical reader documentation and hardware tests in verification/launcher
 and verification/resident-driver refer to the earlier F011-based readers. They
 must not be presented as hardware validation of this reader. New evidence is
-in verification/resident-driver-sd.
+in verification/resident-driver-sd, including the hardware run of 17 October
+2026: GAME94 (55,041 bytes, logical sectors 128-255 of tracks 21-35) loaded
+and ran from a full-size image on a MEGA65 R6.

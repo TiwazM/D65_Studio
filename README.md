@@ -62,7 +62,7 @@ D65 Studio addresses this with a small `START` program and a custom resident rea
 | Resident API | Read-only; callable by cooperating applications |
 | Automatic `LOAD` / `BLOAD` support | Experimental, limited to supported calls on ROM 920413 |
 | `OPEN` streams, custom loaders, disk writes | Not supported |
-| Hardware validation | The direct-SD reader passes the CPU/SD harness; a physical MEGA65 test of a full-size image is pending |
+| Hardware validation | The direct-SD reader passes the CPU/SD harness, and on a MEGA65 R6 (core 0.97.2, ROM 920413) it loaded and ran a 55,041-byte program stored on logical sectors 128–255 of tracks 21–35 of a full-size image written by the macOS SD export |
 
 ### Experimental compatibility mode
 

@@ -9,13 +9,11 @@ finished:
     sta $1e08
     lda checksum
     cmp $1e04
-    beq sumlowok
-    jmp fail
+    lbne fail
 sumlowok:
     lda checksum+1
     cmp $1e05
-    beq sumhighok
-    jmp fail
+    lbne fail
 sumhighok:
 !ifdef COMPAT {
     lda $1e0e
@@ -29,8 +27,7 @@ notstageonly:
     lda #$11
     sta $1e08
     jsr destination
-    bcc destinationok
-    jmp fail
+    lbcs fail
 destinationok:
     ; Never issue a zero-length DMA (it means 65536 bytes).
     lda staged
@@ -95,6 +92,8 @@ fail:
     lda #2
     sta $1e06
 cleanup:
+    lda oldbufsel
+    sta $d689
     lda olddmamb
     sta $d704
     lda olddma
@@ -198,6 +197,7 @@ stride: !byte 0
 offset: !word 0
 olddma: !byte 0
 olddmamb: !byte 0
+oldbufsel: !byte 0
 remain: !word 0
 checksum: !word 0
 staged: !word 0
@@ -220,6 +220,13 @@ engine:
     sta $d02f
     lda #$53
     sta $d02f
+    ; $FFD6E00 shows the SD sector buffer only while $D689 bit 7 is set;
+    ; otherwise it shows the F011 buffer (verified on a MEGA65 R6, core
+    ; 0.97). Hyppo leaves the bit clear after mounting an image.
+    lda $d689
+    sta oldbufsel
+    ora #$80
+    sta $d689
     lda $d68b
     sta $1e0a
     lda $d68a
@@ -238,19 +245,16 @@ engine:
     lda $d68b
     and #$41
     cmp #$41
-    beq mounted
-    jmp fail
+    lbne fail
 mounted:
     lda #$02
     sta $1e08
     lda $d68a
     and #$40
-    beq formatok
-    jmp fail
+    lbne fail
 formatok:
     jsr lookup
-    bcc sizeok
-    jmp fail
+    lbcs fail
 sizeok:
     ; The staging area ends at $87FE000, below the catalogue. Limit both
     ; raw and PRG reads to 57344 file bytes for a simple fail-closed bound.
@@ -275,8 +279,7 @@ filesizeok:
     cmp #1
     beq emptyraw
     cmp #2
-    beq emptyraw
-    jmp fail
+    lbne fail
 emptyraw:
     lda #0
     sta staged
@@ -308,8 +311,7 @@ notraw:
     lda #4
     sta $1e08
     jsr sdready
-    bcc next
-    jmp fail
+    lbcs fail
 next:
     lda #$06
     sta $1e08
@@ -385,23 +387,20 @@ offsetdone:
     adc #0
     sta $d684
     jsr sdready
-    bcc issue
-    jmp fail
+    lbcs fail
 issue:
     lda #$08
     sta $1e08
     lda #$02
     sta $d680
     jsr sdready
-    bcc readok
-    jmp fail
+    lbcs fail
 readok:
     lda #$09
     sta $1e08
     lda $d680
     and #$60
-    beq buffer
-    jmp fail
+    lbne fail
 buffer:
     ; Copy the wanted 256-byte half of the SD sector buffer at $FFD6E00.
     lda #$0a
@@ -451,8 +450,7 @@ gotcount:
     bne subtract
     lda remain
     cmp blockcount
-    bcs subtract
-    jmp fail
+    lbcc fail
 subtract:
     sec
     lda remain
@@ -499,8 +497,7 @@ summed:
     sta $1e08
     lda blockcount
     cmp #2
-    bcs checkheader
-    jmp fail
+    lbcc fail
 checkheader:
     lda #$0f
     sta $1e08

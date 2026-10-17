@@ -33,5 +33,16 @@ Results: cpu-results.txt. All runs pass at image start sectors 0, $123456,
 $FFFFD000 and $7FFFFFF0 (the last two carry into every address byte), with
 both reader.bin and reader-compat.bin.
 
-Not covered: physical MEGA65 hardware, Xemu's own Hyppo/SD path (installed
+Hardware, 17 October 2026 (MEGA65 R6, core release-0.97 20250919, ROM 920413):
+the first build failed on the machine with stage $0F (bad program header)
+because $FFD6E00 showed the F011 buffer: $D689 bit 7 was clear. The harness
+had assumed the SD buffer was always visible there. sd-probe.c now models the
+bit (F011 buffer contents unless $D689.7 is set, and the bit must be restored
+on exit); the old reader fails the harness at stage $0F exactly as on hardware,
+the fixed reader passes. On the machine, with the full-size fixture mounted
+from the SD card, START entry 95 (GAME94, 55,041 bytes on logical sectors
+128-255 of tracks 21-35) loaded, printed RESIDENT PROGRAM 94 OK, and the
+55,039 bytes at $2001 read back over JTAG identical to GAME94.prg.
+
+Not covered: Xemu's own Hyppo/SD path, Xemu's own Hyppo/SD path (installed
 Xemu does not mount D65), and non-SDHC cards (Hyppo itself supports SDHC only).

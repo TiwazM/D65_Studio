@@ -7,6 +7,9 @@
 #include "xemu/cpu65.h"
 #include <assert.h>
 static Uint8 attic[65536];
+// $FFD6E00 shows the SD buffer only while $D689 bit 7 is set; otherwise the
+// F011 buffer (stale data) is seen there. Verified on a MEGA65 R6, core 0.97.
+static Uint8 fdbuf[512];
 static Uint8 io[0x1000],mem[0x60000], sdbuf[512], disk[5570560], original[65536], prior[65536], code[1792];
 static unsigned reads,writes,dmas,code_len,highest_sector,highest_track;
 static int corrupt,timeout,error,busy_after_cmd;
@@ -41,7 +44,7 @@ void cpu65_write_callback(Uint16 a,Uint8 v){
  unsigned src=mem[p+3]+256*mem[p+4]+65536*mem[p+5],dst=mem[p+6]+256*mem[p+7]+65536*mem[p+8];
  Uint8 *sp,*dp;
  if(sm==0x87){assert(src>=0xf0000&&src+n<=0x100000);sp=attic+src-0xf0000;}
- else if(sm==0xff){assert(src>=0xd6e00&&src+n<=0xd7000);sp=sdbuf+src-0xd6e00;}
+ else if(sm==0xff){assert(src>=0xd6e00&&src+n<=0xd7000);sp=((io[0x689]&0x80)?sdbuf:fdbuf)+src-0xd6e00;}
  else{assert(sm==0&&src+n<=sizeof mem);sp=mem+src;}
  if(dm==0x87){assert(dst>=0xf0000&&dst+n<=0xfe000);dp=attic+dst-0xf0000;}else{assert(dm==0&&dst+n<=sizeof mem);dp=mem+dst;}memmove(dp,sp,n);dmas++;
  }
@@ -56,7 +59,7 @@ static void call(void){
   cpu65_step();
  }
  if(cpu.pc!=0x1003){fprintf(stderr,"stuck pc=%04x\n",cpu.pc);abort();}
- assert(writes==0&&io[0x703]==1&&io[0x704]==0);
+ assert(writes==0&&io[0x703]==1&&io[0x704]==0&&io[0x689]==0);  // buffer select restored
  for(unsigned i=0x40000;i<0x60000;i++)assert(mem[i]==0x55);
  assert(cpu.z==0x73&&cpu.pf_i==0&&cpu.pf_d!=0);
 }
@@ -65,7 +68,7 @@ int main(int argc,char**argv){assert(argc==7||argc==8);
  FILE*f=fopen(argv[1],"rb");assert(f);assert(fread(disk,1,sizeof disk,f)==sizeof disk);fclose(f);
  f=fopen(argv[2],"rb");assert(f);unsigned len=fread(original,1,sizeof original,f);fclose(f);
  unsigned index=atoi(argv[3]), mode=atoi(argv[4]);
- memset(mem,0x55,sizeof mem);f=fopen(argv[5],"rb");assert(f);code_len=fread(code,1,sizeof code,f);fclose(f);assert(code_len>0);memcpy(mem+0x1600,code,code_len);
+ memset(mem,0x55,sizeof mem);memset(fdbuf,0xaa,sizeof fdbuf);f=fopen(argv[5],"rb");assert(f);code_len=fread(code,1,sizeof code,f);fclose(f);assert(code_len>0);memcpy(mem+0x1600,code,code_len);
  f=fopen(argv[6],"rb");assert(f);assert(fread(attic+0xe000,1,8192,f)>8);fclose(f);
  memset(mem+0x1e00,0,128);mem[0x1e12]=index;mem[0x1e13]=index>>8;
  io[0x68a]=0;io[0x68b]=0x41;io[0x703]=1;io[0x704]=0;mem[0xd0]=0;busy_after_cmd=1;
