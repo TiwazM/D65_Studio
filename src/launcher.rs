@@ -1,5 +1,5 @@
 //! Experimental direct-controller launcher. No runtime assembler required.
-use crate::disk::{Disk, Format, Result};
+use crate::disk::{display_name, encode_name, Disk, Entry, Format, Result};
 const COMPAT_READER: &[u8] = include_bytes!("../launcher/reader-compat.bin");
 const COMPAT_GATEWAY: &[u8] = include_bytes!("../launcher/compat-gateway.bin");
 const COMPAT_LOAD: &[u8] = include_bytes!("../launcher/compat-load.bin");
@@ -97,7 +97,6 @@ pub fn build_with_compat(sources: &[Disk], compatibility: bool) -> Result<Disk> 
     }
     let mut files = Vec::new();
     let mut names = std::collections::HashSet::new();
-    let mut menu = Vec::new();
     for (source_index, source) in sources.iter().enumerate() {
         if source.format != Format::D81 {
             return Err("Launcher sources must be D81 images.".into());
@@ -117,17 +116,40 @@ pub fn build_with_compat(sources: &[Disk], compatibility: bool) -> Result<Disk> 
                 ));
             }
             let data = source.read(&entry)?;
-            if entry.kind == 2 && valid_basic(&data) {
-                menu.push((entry.name.clone(), files.len()));
-            }
             files.push((entry, data));
             if files.len() > 295 {
                 return Err("Too many files: at most 295 files plus START.".into());
             }
         }
     }
-    if menu.is_empty() || menu.len() > 99 {
+    let programs = files.iter().filter(|(e, d)| is_menu_program(e, d)).count();
+    if programs == 0 || programs > 99 {
         return Err("The menu needs 1–99 MEGA65 BASIC-entry PRGs at $2001, at most 55,041 bytes each. Other files are retained for the resident reader.".into());
+    }
+    pack(&files, "D65 RESIDENT", "65", compatibility, false)
+}
+
+/// Lay out START, the catalogue and every file in a fresh resident image.
+/// `editable` marks images created empty in D65 Studio, whose contents are
+/// changed by repacking rather than by DOS-style allocation.
+fn pack(
+    files: &[(Entry, Vec<u8>)],
+    label: &str,
+    id: &str,
+    compatibility: bool,
+    editable: bool,
+) -> Result<Disk> {
+    if files.len() > 295 {
+        return Err("Too many files: at most 295 files plus START.".into());
+    }
+    let menu: Vec<_> = files
+        .iter()
+        .enumerate()
+        .filter(|(_, (e, d))| is_menu_program(e, d))
+        .map(|(i, (e, _))| (e.name.clone(), i))
+        .collect();
+    if menu.len() > 99 {
+        return Err("The START menu holds at most 99 MEGA65 BASIC programs.".into());
     }
     let mut catalog = vec![0; 8 + CATALOG_ENTRY * files.len()];
     catalog[..5].copy_from_slice(b"D65R\x01");
@@ -135,7 +157,7 @@ pub fn build_with_compat(sources: &[Disk], compatibility: bool) -> Result<Disk> 
     // DATA values use three decimal digits, so substituting final addresses
     // cannot change START's length or allocation (no layout fixed-point guess).
     let placeholder = make_start(&menu, &catalog, compatibility)?;
-    let mut disk = Disk::create(Format::D65, "D65 RESIDENT", "65")?;
+    let mut disk = Disk::create(Format::D65, label, id)?;
     disk.put("START", 2, &placeholder, false)?;
     let start = disk.entries()?.remove(0);
     let start_chain = disk.chain(&start)?;
@@ -219,6 +241,7 @@ pub fn build_with_compat(sources: &[Disk], compatibility: bool) -> Result<Disk> 
     disk.bytes[h + 56..h + 58].copy_from_slice(&(needed as u16).to_le_bytes());
     disk.bytes[h + 58..h + 60].copy_from_slice(&(start_chain.len() as u16).to_le_bytes());
     disk.bytes[h + 60] = u8::from(compatibility);
+    disk.bytes[h + 61] = u8::from(editable);
     let entries = disk.entries()?;
     if entries.len() != files.len() + 1 || disk.read(&entries[0])? != starter {
         return Err("Launch directory verification failed.".into());
@@ -241,6 +264,134 @@ pub fn build_with_compat(sources: &[Disk], compatibility: bool) -> Result<Disk> 
         }
     }
     Ok(disk)
+}
+
+fn is_menu_program(entry: &Entry, data: &[u8]) -> bool {
+    entry.kind == 2 && valid_basic(data)
+}
+
+/// An empty resident-reader D65 that D65 Studio can edit: every change
+/// repacks the files and regenerates START and its catalogue.
+pub fn create_editable(label: &str, id: &str) -> Result<Disk> {
+    if encode_name(id, 2)?.len() != 2 {
+        return Err("Disk ID must be exactly two characters.".into());
+    }
+    pack(&[], label, id, false, true)
+}
+
+pub fn is_editable(disk: &Disk) -> bool {
+    let Ok(h) = disk.offset(40, 0) else {
+        return false;
+    };
+    disk.format == Format::D65
+        && disk.bytes[h + 48..h + 56] == *b"D65RES01"
+        && disk.bytes[h + 61] == 1
+}
+
+/// Every file except START, with its bytes, in directory order.
+fn contents(disk: &Disk) -> Result<Vec<(Entry, Vec<u8>)>> {
+    let mut entries = disk.entries()?.into_iter();
+    if entries
+        .next()
+        .is_none_or(|e| e.raw_name[..5] != *b"START" || e.raw_name[5..].iter().any(|b| *b != 0xa0))
+    {
+        return Err("Resident image is missing its START launcher.".into());
+    }
+    entries
+        .map(|e| {
+            let data = disk.read(&e)?;
+            Ok((e, data))
+        })
+        .collect()
+}
+
+fn repack(disk: &mut Disk, files: &[(Entry, Vec<u8>)]) -> Result<()> {
+    if !is_editable(disk) {
+        return Err("Only resident images created in D65 Studio can be edited.".into());
+    }
+    let h = disk.offset(40, 0)?;
+    *disk = pack(
+        files,
+        &disk.label(),
+        &disk.disk_id(),
+        disk.bytes[h + 60] == 1,
+        true,
+    )?;
+    Ok(())
+}
+
+fn raw_name(name: &str) -> Result<[u8; 16]> {
+    let name = encode_name(name, 16)?;
+    if name == b"START" {
+        return Err("START is reserved for the launcher; choose another name.".into());
+    }
+    let mut raw = [0xa0; 16];
+    raw[..name.len()].copy_from_slice(&name);
+    Ok(raw)
+}
+
+pub fn put(disk: &mut Disk, name: &str, kind: u8, data: &[u8], replace: bool) -> Result<()> {
+    if !(1..=3).contains(&kind) {
+        return Err("Choose SEQ, PRG or USR.".into());
+    }
+    let raw = raw_name(name)?;
+    let mut files = contents(disk)?;
+    if let Some((entry, bytes)) = files.iter_mut().find(|(e, _)| e.raw_name == raw) {
+        if !replace {
+            return Err("A file with this name already exists.".into());
+        }
+        if entry.flags & 0x40 != 0 {
+            return Err("File is locked.".into());
+        }
+        entry.kind = kind;
+        entry.flags = (entry.flags & !7) | kind;
+        *bytes = data.to_vec();
+    } else {
+        files.push((
+            Entry {
+                offset: 0,
+                name: display_name(&raw),
+                raw_name: raw,
+                kind,
+                flags: 0x80 | kind,
+                blocks: 0,
+                start: (0, 0),
+            },
+            data.to_vec(),
+        ));
+    }
+    repack(disk, &files)
+}
+
+pub fn remove(disk: &mut Disk, entry: &Entry) -> Result<()> {
+    if entry.flags & 0x40 != 0 {
+        return Err("File is locked.".into());
+    }
+    let mut files = contents(disk)?;
+    let before = files.len();
+    files.retain(|(e, _)| e.raw_name != entry.raw_name);
+    if files.len() == before {
+        return Err("File not found; it cannot be START.".into());
+    }
+    repack(disk, &files)
+}
+
+pub fn rename(disk: &mut Disk, entry: &Entry, name: &str) -> Result<()> {
+    if entry.flags & 0x40 != 0 {
+        return Err("File is locked.".into());
+    }
+    let raw = raw_name(name)?;
+    let mut files = contents(disk)?;
+    if raw != entry.raw_name && files.iter().any(|(e, _)| e.raw_name == raw) {
+        return Err("That filename already exists.".into());
+    }
+    let (e, _) = files
+        .iter_mut()
+        .find(|(e, _)| e.raw_name == entry.raw_name)
+        .ok_or("File not found; START cannot be renamed.")?;
+    e.raw_name = raw;
+    e.name = display_name(&raw);
+    repack(disk, &files)
 }
 
 fn write_chain(disk: &mut Disk, chain: &[(u8, u8)], data: &[u8]) -> Result<()> {
@@ -355,6 +506,13 @@ fn make_start(menu: &[(String, usize)], catalog: &[u8], compatibility: bool) -> 
             );
             line(&mut basic, row + 2, &token("GOTO400"));
         }
+    }
+    if menu.is_empty() {
+        line(
+            &mut basic,
+            100,
+            &token("PRINT\"NO PROGRAMS ON THIS DISK YET\":END"),
+        );
     }
     line(&mut basic, 400, &token("IFN=-1THENEND"));
     for i in 0..menu.len() {
@@ -726,5 +884,78 @@ mod directory_tests {
         assert_eq!(built.bytes[bam], 0);
         assert_eq!(&built.bytes[bam + 1..bam + 6], &[0, 0, 0, 0, 0]);
         assert!(built.validate_writable().is_err());
+    }
+}
+
+#[cfg(test)]
+mod editable_tests {
+    use super::*;
+    const PROGRAM: [u8; 12] = [1, 32, 9, 32, 10, 0, 0x99, 0x22, 0x22, 0, 0, 0];
+    #[test]
+    fn empty_large_disk_has_a_start_menu_and_is_editable() {
+        let disk = create_editable("BIG DISK", "65").unwrap();
+        assert!(is_editable(&disk));
+        assert_eq!(disk.label(), "BIG DISK");
+        assert_eq!(disk.bytes.len(), crate::disk::D65_SIZE);
+        let entries = disk.entries().unwrap();
+        assert_eq!(entries.len(), 1);
+        let start = disk.read(&entries[0]).unwrap();
+        assert!(valid_basic(&start));
+        assert!(start.windows(11).any(|b| b == b"NO PROGRAMS"));
+        assert!(disk.validate_writable().is_err());
+        assert!(!is_editable(
+            &build(&[{
+                let mut d = Disk::create(Format::D81, "SRC", "65").unwrap();
+                d.put("DEMO", 2, &PROGRAM, false).unwrap();
+                d
+            }])
+            .unwrap()
+        ));
+    }
+    #[test]
+    fn add_rename_and_delete_rebuild_start_and_catalogue() {
+        let mut disk = create_editable("BIG DISK", "AB").unwrap();
+        disk.put("GAME", 2, &PROGRAM, false).unwrap();
+        disk.put("DATA", 1, &vec![0x42; 900_000], false).unwrap();
+        assert!(disk.put("GAME", 2, &PROGRAM, false).is_err());
+        assert!(disk.put("START", 2, &PROGRAM, false).is_err());
+        let es = disk.entries().unwrap();
+        assert_eq!(
+            es.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+            ["START", "GAME", "DATA"]
+        );
+        assert_eq!(disk.read(&es[2]).unwrap(), vec![0x42; 900_000]);
+        assert!(disk.read(&es[0]).unwrap().windows(4).any(|b| b == b"GAME"));
+        assert_eq!(disk.disk_id(), "AB");
+        disk.rename(&es[1], "PLAY ME").unwrap();
+        let es = disk.entries().unwrap();
+        assert_eq!(es[1].name, "PLAY ME");
+        let start = disk.read(&es[0]).unwrap();
+        assert!(start.windows(7).any(|b| b == b"PLAY ME"));
+        assert!(!start.windows(4).any(|b| b == b"GAME"));
+        assert!(disk.rename(&es[1], "DATA").is_err());
+        assert!(disk.rename(&es[0], "OTHER").is_err());
+        disk.put("DATA", 1, b"short", true).unwrap();
+        disk.remove(&disk.entries().unwrap()[1]).unwrap();
+        let es = disk.entries().unwrap();
+        assert_eq!(es.len(), 2);
+        assert_eq!(disk.read(&es[1]).unwrap(), b"short");
+        assert!(is_editable(&disk));
+        let (used, total) = disk.resident_space().unwrap();
+        assert_eq!(total, crate::disk::PAYLOAD_BLOCKS);
+        assert_eq!(used, es.iter().map(|e| e.blocks).sum::<usize>());
+    }
+    #[test]
+    fn store_edits_and_reopens_large_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("BIG.d65");
+        let mut store =
+            crate::store::Store::create(&path, create_editable("BIG", "65").unwrap()).unwrap();
+        store.change(|d| d.put("GAME", 2, &PROGRAM, false)).unwrap();
+        drop(store);
+        let store = crate::store::Store::open(&path).unwrap();
+        assert!(is_editable(&store.disk));
+        assert_eq!(store.disk.entries().unwrap()[1].name, "GAME");
+        assert!(store.backup.is_none());
     }
 }

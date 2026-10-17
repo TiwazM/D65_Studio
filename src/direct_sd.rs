@@ -111,7 +111,9 @@ fn identity_from_plists(plist: &[u8], parent: &[u8]) -> Result<Identity> {
     if uuid.is_empty() {
         return Err("The card has no stable volume identity.".into());
     }
-    let size = field(&plist, "TotalSize")?
+    // "Size" is the partition length, matching the raw device. "TotalSize" is
+    // the mounted filesystem's capacity and changes once the volume unmounts.
+    let size = field(&plist, "Size")?
         .parse::<u64>()
         .map_err(|_| "Invalid partition size")?;
     if size == 0 || size % 512 != 0 {
@@ -402,9 +404,24 @@ pub fn helper(args: &[String]) -> Result<String> {
     }
     command("/usr/sbin/diskutil", &["unmountDisk", whole])?;
     let operation = (|| {
-        let (after, mount) = inspect(device)?;
-        if after != expected || mount.is_some() {
-            return Err("Card identity changed or the volume is still mounted.".into());
+        // diskutil can return before the kernel mount table and disk
+        // arbitration have settled; wait briefly for the unmount to show.
+        let mut settled = false;
+        for _ in 0..50 {
+            let (after, mount) = inspect(device)?;
+            if after != expected {
+                return Err("Card identity changed after unmounting; export cancelled.".into());
+            }
+            if mount.is_none() {
+                settled = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        if !settled {
+            return Err(
+                "The card volume is still mounted after unmounting; export cancelled.".into(),
+            );
         }
         let path = format!("/dev/r{device}");
         let file = OpenOptions::new()
@@ -491,7 +508,7 @@ mod tests {
     }
     #[test]
     fn diskutil_schema_uses_whole_disk_without_mounted_or_whole_keys() {
-        let partition = r#"<key>DeviceIdentifier</key><string>disk4s1</string><key>ParentWholeDisk</key><string>disk4</string><key>WholeDisk</key><false/><key>Internal</key><false/><key>FilesystemType</key><string>msdos</string><key>VolumeUUID</key><string>TEST-ID</string><key>TotalSize</key><integer>268932096</integer>"#;
+        let partition = r#"<key>DeviceIdentifier</key><string>disk4s1</string><key>ParentWholeDisk</key><string>disk4</string><key>WholeDisk</key><false/><key>Internal</key><false/><key>FilesystemType</key><string>msdos</string><key>VolumeUUID</key><string>TEST-ID</string><key>TotalSize</key><integer>268800000</integer><key>Size</key><integer>268932096</integer>"#;
         let parent = r#"<key>DeviceIdentifier</key><string>disk4</string><key>WholeDisk</key><true/><key>Internal</key><false/><key>VirtualOrPhysical</key><string>Physical</string>"#;
         let actual = identity_from_plists(&plist(partition), &plist(parent)).unwrap();
         assert_eq!(

@@ -16,6 +16,7 @@ The project began with a simple question: *Why is it so difficult to create and 
 - Convert supported D65/D81 container layouts, refusing conversions that would lose extended data.
 - Browse mounted images in **Windows Explorer or macOS Finder** using a local WebDAV bridge; no separate filesystem driver required.
 - Merge programs and supporting files from multiple D81s into a **read-only D65 compilation** with a `START` launcher.
+- Create an empty **Large D65 with START resident reader** and fill it directly: adding, renaming or deleting a file repacks the image and rebuilds `START` and its catalogue.
 - Pack about **5.4 MB of shared launcher-and-file payload** into a compilation: the resident reader reads the mounted image's SD sectors directly, so the whole 5,570,560-byte container is usable.
 - Launch compatible MEGA65 programs and use a **resident, read-only file-reader API** for further file reads.
 - Optional **experimental KERNAL LOAD/VERIFY compatibility** for certain existing programs on ROM 920413, including BASIC `BLOAD`.
@@ -36,7 +37,14 @@ RUN"START"
 
 Select a program from the menu.
 
-**Important:** Compilations are **read-only**, including when browsed through Explorer/Finder. To change their contents, edit the source D81 images and rebuild the compilation. Editing ordinary, non-compilation disk images is supported separately.
+To build a large disk from scratch instead, choose **New disk**, keep **D65** selected and tick **Large D65 with START resident reader**. The new image holds only `START`; add PRG, SEQ and USR files with **Add files…**. Every change repacks the whole image, regenerates the `START` menu (BASIC programs at `$2001`, up to 99) and keeps a backup of the original beside it. The same is available from the command line:
+
+```sh
+d65-studio create d65big BIG.d65 "MY BIG DISK"
+d65-studio add BIG.d65 GAME.prg GAME
+```
+
+**Important:** Compilations built with **Merge D81s…** are **read-only**, including when browsed through Explorer/Finder. To change their contents, edit the source D81 images and rebuild the compilation. Editing ordinary, non-compilation disk images is supported separately.
 
 ## How the experimental loader works
 

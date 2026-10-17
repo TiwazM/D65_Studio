@@ -405,7 +405,11 @@ impl Disk {
     pub fn validate_writable(&self) -> Result<()> {
         let header = self.offset(40, 0)?;
         if self.bytes[header + 48..header + 56] == *b"D65RES01" {
-            return Err("Resident-reader compilation: read-only. Rebuild from the source D81 images to change its contents.".into());
+            return Err(if crate::launcher::is_editable(self) {
+                "Large D65 with START resident reader: edit it in D65 Studio; START is rebuilt on every change.".into()
+            } else {
+                "Resident-reader compilation: read-only. Rebuild from the source D81 images to change its contents.".into()
+            });
         }
         let mut occupied = HashSet::from([(40, 0), (40, 1), (40, 2)]);
         let id = self.offset(40, 0)? + 22;
@@ -479,6 +483,9 @@ impl Disk {
         }))
     }
     pub fn put(&mut self, name: &str, kind: u8, data: &[u8], replace: bool) -> Result<()> {
+        if crate::launcher::is_editable(self) {
+            return crate::launcher::put(self, name, kind, data, replace);
+        }
         self.validate_writable()?;
         let name = encode_name(name, 16)?;
         if !(1..=3).contains(&kind) {
@@ -573,6 +580,9 @@ impl Disk {
         Ok(())
     }
     pub fn remove(&mut self, e: &Entry) -> Result<()> {
+        if crate::launcher::is_editable(self) {
+            return crate::launcher::remove(self, e);
+        }
         self.validate_writable()?;
         if e.flags & 0x40 != 0 {
             return Err("File is locked.".into());
@@ -584,6 +594,9 @@ impl Disk {
         Ok(())
     }
     pub fn rename(&mut self, e: &Entry, name: &str) -> Result<()> {
+        if crate::launcher::is_editable(self) {
+            return crate::launcher::rename(self, e, name);
+        }
         self.validate_writable()?;
         if e.flags & 0x40 != 0 {
             return Err("File is locked.".into());

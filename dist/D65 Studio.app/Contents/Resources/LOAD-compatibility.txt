@@ -1,0 +1,100 @@
+D65 Studio 0.3.1 — optional LOAD compatibility (experimental)
+
+Use it
+------
+Open Merge D81s, enable Include START launcher, then enable Experimental LOAD
+compatibility (ROM 920413). Select the source D81s and save a new compilation.
+Use Export to SD card with a new filename, mount it in MEGA65 drive 8, and enter
+RUN"START". START installs the hook, prints EXPERIMENTAL LOAD HOOK ACTIVE, and
+shows the program menu. The hook stays installed after the selected program
+starts. Source programs are not patched.
+
+This mode reroutes supported standard KERNAL LOAD calls through the resident
+D65 reader, including calls made by BASIC BLOAD. Programs using those calls can
+read files in extended sectors without calling our custom API. The desktop
+importer keeps all source files together; duplicate names still need resolving.
+
+Supported calls
+---------------
+* ROM 920413, with the original KERNAL LOAD vector. Installation checks a CRC32
+  of the complete visible 8 KiB KERNAL and refuses different code. It does not
+  flash, alter, or replace the ROM.
+* Drive 8, including the ROM's default-device setting when it resolves to 8.
+  Other devices pass to the saved original ROM LOAD routine.
+* Exact PETSCII PRG names, 1-16 characters; optional 0: prefix. No wildcards,
+  directories, '$', or type suffixes. The directory itself remains ROM-readable
+  before installing the hook. Use the START menu while the hook is installed.
+* LOAD and VERIFY: secondary address 1 (or other nonzero value) uses the file's
+  stored address; secondary address 0 uses the requested X/Y destination.
+* KERNAL raw LOAD/VERIFY flag $40 with secondary address 0 includes the PRG's
+  two-byte header. Normal LOAD/VERIFY omits it.
+* SETBNK destinations 0 or 1, with the entire output inside $2000-$F6FF. The
+  caller must keep its running code and live data clear of that destination.
+  File staging is limited to 57,344 bytes, including any two-byte header.
+* VERIFY reports a mismatch through READSS bit 4, as this ROM does, with carry
+  clear and no change to the destination. Missing files return KERNAL error 4.
+* Exact START loads pass to the ROM, so the same compilation can be restarted.
+
+Limits
+------
+This is a LOAD hook, not a complete DOS replacement. OPEN, CHKIN, BASIN, CLOSE,
+SAVE, command channels, custom track loaders and direct internal ROM calls are
+not intercepted. SEQ/USR reads still use the resident API. Programs that depend
+on those other calls, C64 mode, bank wrapping, larger reads or different memory
+layouts are not automatically compatible. We have not tested arbitrary games.
+Do not SAVE, SCRATCH or VALIDATE the read-only compilation.
+
+Reserve bank 0 $1600-$1EFF (2,304 bytes) and physical $87EE000-$87FFFFF (72 KiB
+at the top of Attic RAM). This is 8 KiB more than the normal resident service.
+The gateway is at $1C40, the 256-byte logical-sector buffer at $1D00, and hook state at
+$1E80-$1ED7. The adapter lives at $87EE000-$87EFFFF; staging and catalogue remain
+at $87F0000 and $87FE000. It temporarily maps the adapter into $2000-$3FFF and
+restores the caller's complete mapping before returning. These reservations
+are conventions, not hardware protection. A program can overwrite them.
+
+Calls are synchronous and non-reentrant, with interrupts disabled. Extended
+I/O, the utility area and KERNAL must be mapped normally at entry. Standard
+KERNAL zero-page/base-page conventions still apply. No interrupts may call the
+service concurrently. The public resident API remains available as documented
+in Resident-driver.txt. Command 5 is private to the hook and is not an app API.
+
+Before changing the mounted image, starting another compilation/mode, or
+restoring an old freezer snapshot, reset the machine. Alternatively, while the
+same installation is intact, BANK 0:SYS 7238 removes this LOAD hook; then mount
+the next image and run its START. The catalogue describes the installed image;
+there is no automatic remount detection. Freezer snapshots can lose Attic RAM.
+If code or high memory was overwritten, reset instead of calling uninstall.
+
+Install errors
+--------------
+LOAD HOOK INSTALL FAILED 129: KERNAL fingerprint does not match ROM 920413.
+LOAD HOOK INSTALL FAILED 130: another LOAD hook is already installed.
+Neither condition replaces the existing LOAD vector. Do not bypass the checks.
+Reinstalling our intact hook is supported. Uninstall restores only our LOAD
+vector and refuses to replace somebody else's hook.
+
+First hardware checks
+---------------------
+HOOKBAS.D65: RUN"START", select 1. Expected BASIC BLOAD SECOND FILE OK.
+This is a plain BASIC program using BLOAD"LEVEL",B0,P49152,U8; its LEVEL file
+starts at track 1, logical sector 40, beyond normal ROM geometry.
+
+HOOKTEST.D65: RUN"START", select 1. Expected ALL 14 LOAD HOOK CHECKS PASSED.
+Its LEVEL file starts at track 1, logical sector 43. It tests ordinary LOAD,
+relocation, bank 1, raw loading, VERIFY, error handling, drive 9 fallback,
+uninstall/reinstall, and restoration of memory mapping and CPU state. Leave
+drive 9 empty for this diagnostic. It writes test bytes only to RAM, not disk.
+If it prints LOAD HOOK TEST FAILED, enter BANK 0:PRINT PEEK(7922) and
+record that check number.
+Reset between images. Both test images contain only original test programs.
+
+Validation
+----------
+The real Xemu CPU, enhanced DMA, Attic RAM, floppy controller and ROM 920413 pass
+14 KERNAL-call checks and the plain BASIC BLOAD example using D81 controls.
+Those controls put LEVEL in ordinary sectors and enable the reader's developer
+D81 flag. Real D65 images keep that flag off. The installed Xemu does not
+correctly mount these D65 images. Extended reads additionally pass the CPU/FDC
+harness with modeled DMA and D65 addressing. No physical-hardware success is
+claimed for this new hook; test HOOKBAS and HOOKTEST on the MEGA65.
+See verification/load-hook/Results.txt for exact evidence and reproduction.

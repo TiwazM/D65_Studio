@@ -6,10 +6,45 @@ use d65_studio::{
 use eframe::egui::{self, Color32, RichText};
 use std::{
     fs,
+    future::Future,
     path::{Path, PathBuf},
+    pin::Pin,
     sync::{Arc, Mutex},
+    task::{Context, Poll, Waker},
 };
 type Shared = Arc<Mutex<Store>>;
+/// A file dialog shown without blocking the event loop. Blocking dialogs run a
+/// nested modal loop that panics in winit when an SD card mounts meanwhile.
+type Dialog = Pin<Box<dyn Future<Output = Vec<PathBuf>>>>;
+/// What to do with the chosen paths once a dialog closes.
+enum Pick {
+    Open,
+    Import,
+    Extract(Entry),
+    Convert(Disk, bool),
+    Sd(Disk, PathBuf),
+    MergeSources,
+    MergeSave(Disk, bool, bool),
+    Mount,
+    Create(Disk),
+}
+fn one(f: impl Future<Output = Option<rfd::FileHandle>> + 'static) -> Dialog {
+    Box::pin(async move {
+        f.await
+            .map(|h| h.path().to_path_buf())
+            .into_iter()
+            .collect()
+    })
+}
+fn many(f: impl Future<Output = Option<Vec<rfd::FileHandle>>> + 'static) -> Dialog {
+    Box::pin(async move {
+        f.await
+            .unwrap_or_default()
+            .iter()
+            .map(|h| h.path().to_path_buf())
+            .collect()
+    })
+}
 const TEAL: Color32 = Color32::from_rgb(81, 219, 182);
 struct Studio {
     store: Option<Shared>,
@@ -23,6 +58,8 @@ struct Studio {
     label: String,
     id: String,
     format: Format,
+    big: bool,
+    dialog: Option<(Pick, Dialog)>,
     rename: String,
     edit: String,
     delete_open: bool,
@@ -51,6 +88,8 @@ impl Default for Studio {
             label: "MY MEGA65 DISK".into(),
             id: "65".into(),
             format: Format::D65,
+            big: false,
+            dialog: None,
             rename: String::new(),
             edit: String::new(),
             delete_open: false,
@@ -68,6 +107,47 @@ impl Default for Studio {
     }
 }
 impl Studio {
+    fn ask(&mut self, pick: Pick, dialog: Dialog) {
+        if self.dialog.is_none() {
+            self.dialog = Some((pick, dialog));
+        }
+    }
+    fn picked_paths(&mut self, pick: Pick, paths: Vec<PathBuf>) {
+        let Some(first) = paths.first().cloned() else {
+            return;
+        };
+        match pick {
+            Pick::Open => self.load(first),
+            Pick::Import => self.import_paths(paths),
+            Pick::Extract(e) => self.extract_to(e, first),
+            Pick::Convert(d, same) => self.convert_to(d, same, first),
+            #[cfg(any(target_os = "macos", windows))]
+            Pick::Sd(disk, source) => self.export_sd_to(disk, source, first),
+            #[cfg(not(any(target_os = "macos", windows)))]
+            Pick::Sd(..) => {}
+            Pick::MergeSources => self.merge_paths(paths),
+            Pick::MergeSave(disk, launch, compat) => self.merge_save(disk, launch, compat, first),
+            Pick::Mount => self.mount_at(first),
+            Pick::Create(d) => match Store::create(&first, d) {
+                Ok(s) => {
+                    let big = d65_studio::launcher::is_editable(&s.disk);
+                    self.store = Some(Arc::new(Mutex::new(s)));
+                    self.selected = None;
+                    self.readonly = big;
+                    self.new_open = false;
+                    self.report(
+                        Ok(()),
+                        if big {
+                            "Large D65 created. Add files here; START and its menu are rebuilt on every change."
+                        } else {
+                            "New image created."
+                        },
+                    );
+                }
+                Err(e) => self.report(Err(e), ""),
+            },
+        }
+    }
     fn report(&mut self, r: Result<()>, ok: &str) {
         match r {
             Ok(()) => {
@@ -83,11 +163,15 @@ impl Studio {
     fn load(&mut self, p: PathBuf) {
         match Store::open(&p) {
             Ok(s) => {
-                let warning = s.disk.validate_writable().err();
-                self.readonly = warning.is_some();
+                let big = d65_studio::launcher::is_editable(&s.disk);
+                let warning = s.disk.validate_writable().err().filter(|_| !big);
+                self.readonly = warning.is_some() || big;
                 self.store = Some(Arc::new(Mutex::new(s)));
                 self.selected = None;
                 self.status = warning.unwrap_or_else(|| {
+                    if big {
+                        return "Large D65 opened. Edits save automatically and rebuild START; the first edit creates a backup.".into();
+                    }
                     "Image opened. Edits save automatically; the first edit creates a backup."
                         .into()
                 });
@@ -105,92 +189,105 @@ impl Studio {
             .find(|e| Some(e.offset) == self.selected)
     }
     fn import(&mut self) {
-        if let Some(paths) = rfd::FileDialog::new()
-            .set_title("Add PRG, SEQ or USR files")
-            .add_filter("Commodore files", &["prg", "seq", "usr"])
-            .pick_files()
-        {
-            let r = (|| {
-                let mut files = Vec::new();
-                for p in paths {
-                    let ext = p
-                        .extension()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_ascii_lowercase();
-                    let kind = match ext.as_str() {
-                        "prg" => 2,
-                        "seq" => 1,
-                        "usr" => 3,
-                        _ => return Err("Use .prg, .seq or .usr files.".into()),
-                    };
-                    let name = p
-                        .file_stem()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
-                    files.push((name, kind, fs::read(p).map_err(|e| e.to_string())?));
-                }
-                self.store
-                    .as_ref()
-                    .ok_or("No image")?
-                    .lock()
-                    .unwrap()
-                    .change(|d| {
-                        for (name, kind, data) in &files {
-                            d.put(name, *kind, data, false)?
-                        }
-                        Ok(())
-                    })
-            })();
-            self.report(r, "Files added and saved.");
-        }
+        self.ask(
+            Pick::Import,
+            many(
+                rfd::AsyncFileDialog::new()
+                    .set_title("Add PRG, SEQ or USR files")
+                    .add_filter("Commodore files", &["prg", "seq", "usr"])
+                    .pick_files(),
+            ),
+        );
+    }
+    fn import_paths(&mut self, paths: Vec<PathBuf>) {
+        let r = (|| {
+            let mut files = Vec::new();
+            for p in paths {
+                let ext = p
+                    .extension()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_ascii_lowercase();
+                let kind = match ext.as_str() {
+                    "prg" => 2,
+                    "seq" => 1,
+                    "usr" => 3,
+                    _ => return Err("Use .prg, .seq or .usr files.".into()),
+                };
+                let name = p
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                files.push((name, kind, fs::read(p).map_err(|e| e.to_string())?));
+            }
+            self.store
+                .as_ref()
+                .ok_or("No image")?
+                .lock()
+                .unwrap()
+                .change(|d| {
+                    for (name, kind, data) in &files {
+                        d.put(name, *kind, data, false)?
+                    }
+                    Ok(())
+                })
+        })();
+        self.report(r, "Files added and saved.");
     }
     fn export(&mut self) {
         if let Some(e) = self.picked() {
-            if let Some(p) = rfd::FileDialog::new()
-                .set_file_name(e.host_name())
-                .save_file()
-            {
-                let r = {
-                    let s = self.store.as_ref().unwrap().lock().unwrap();
-                    if p.canonicalize().ok().as_ref() == Some(&s.path) {
-                        Err("Choose a different path; exporting over the open image is not allowed.".into())
-                    } else {
-                        s.disk.read(&e).and_then(|b| atomic_write(&p, &b))
-                    }
-                };
-                self.report(r, "File exported.")
-            }
+            let name = e.host_name();
+            self.ask(
+                Pick::Extract(e),
+                one(rfd::AsyncFileDialog::new().set_file_name(name).save_file()),
+            );
         }
+    }
+    fn extract_to(&mut self, e: Entry, p: PathBuf) {
+        let r = {
+            let s = self.store.as_ref().unwrap().lock().unwrap();
+            if p.canonicalize().ok().as_ref() == Some(&s.path) {
+                Err("Choose a different path; exporting over the open image is not allowed.".into())
+            } else {
+                s.disk.read(&e).and_then(|b| atomic_write(&p, &b))
+            }
+        };
+        self.report(r, "File exported.")
     }
     fn convert(&mut self, format: Format) {
         let disk = self.store.as_ref().unwrap().lock().unwrap().disk.clone();
         match disk.convert(format) {
             Err(e) => self.report(Err(e), ""),
             Ok(d) => {
-                if let Some(p) = rfd::FileDialog::new()
-                    .set_file_name(format!("{}.{}", disk.label(), format.ext()))
-                    .save_file()
-                {
-                    let r = if p.canonicalize().ok().as_ref()
-                        == Some(&self.store.as_ref().unwrap().lock().unwrap().path)
-                    {
-                        Err("Choose a different path for the converted image.".into())
-                    } else {
-                        atomic_write(&p, &d.bytes)
-                    };
-                    self.report(
-                        r,
-                        if disk.format == format {
-                            "Image copy saved."
-                        } else {
-                            "Converted image exported."
-                        },
-                    )
-                }
+                let name = format!("{}.{}", disk.label(), format.ext());
+                self.ask(
+                    Pick::Convert(d, disk.format == format),
+                    one(rfd::AsyncFileDialog::new().set_file_name(name).save_file()),
+                );
             }
         }
+    }
+    fn convert_to(&mut self, d: Disk, same: bool, p: PathBuf) {
+        let r = if p.canonicalize().ok().as_ref()
+            == self
+                .store
+                .as_ref()
+                .map(|s| s.lock().unwrap().path.clone())
+                .as_ref()
+        {
+            Err("Choose a different path for the converted image.".into())
+        } else {
+            atomic_write(&p, &d.bytes)
+        };
+        self.report(
+            r,
+            if same {
+                "Image copy saved."
+            } else {
+                "Converted image exported."
+            },
+        )
     }
     #[cfg(any(target_os = "macos", windows))]
     fn export_sd(&mut self) {
@@ -198,17 +295,21 @@ impl Studio {
             let s = self.store.as_ref().unwrap().lock().unwrap();
             (s.disk.clone(), s.path.clone())
         };
-        let Some(destination) = rfd::FileDialog::new()
-            .set_title(if cfg!(windows) {
-                "SD export — choose an existing card folder and a NEW filename"
-            } else {
-                "Direct SD export — choose the card root and a NEW filename"
-            })
-            .set_file_name(d65_studio::sd_export::suggested_name(&source, disk.format))
-            .save_file()
-        else {
-            return;
-        };
+        let name = d65_studio::sd_export::suggested_name(&source, disk.format);
+        self.ask(
+            Pick::Sd(disk, source),
+            one(rfd::AsyncFileDialog::new()
+                .set_title(if cfg!(windows) {
+                    "SD export — choose an existing card folder and a NEW filename"
+                } else {
+                    "Direct SD export — choose the card root and a NEW filename"
+                })
+                .set_file_name(name)
+                .save_file()),
+        );
+    }
+    #[cfg(any(target_os = "macos", windows))]
+    fn export_sd_to(&mut self, disk: Disk, source: PathBuf, destination: PathBuf) {
         if fs::read(&source).ok().as_deref() != Some(disk.bytes.as_slice()) {
             self.report(
                 Err(
@@ -237,17 +338,21 @@ impl Studio {
         }));
     }
     fn merge(&mut self) {
-        let Some(paths) = rfd::FileDialog::new()
-            .set_title(if self.launch_build {
-                "Select D81 images — files are packed automatically"
-            } else {
-                "Select two or three D81 images"
-            })
-            .add_filter("D81 images", &["d81"])
-            .pick_files()
-        else {
-            return;
-        };
+        self.ask(
+            Pick::MergeSources,
+            many(
+                rfd::AsyncFileDialog::new()
+                    .set_title(if self.launch_build {
+                        "Select D81 images — files are packed automatically"
+                    } else {
+                        "Select two or three D81 images"
+                    })
+                    .add_filter("D81 images", &["d81"])
+                    .pick_files(),
+            ),
+        );
+    }
+    fn merge_paths(&mut self, paths: Vec<PathBuf>) {
         let result = (|| {
             let sources: Result<Vec<_>> = paths
                 .iter()
@@ -259,24 +364,31 @@ impl Studio {
             } else {
                 Disk::merge_d81(&sources)?
             };
-            let Some(path) = rfd::FileDialog::new()
-                .set_file_name(if self.launch_build {
+            Ok(disk)
+        })();
+        match result {
+            Ok(disk) => {
+                let name = if self.launch_build {
                     "LAUNCH.d65"
                 } else {
                     "MERGED-EXPERIMENTAL.d65"
-                })
-                .save_file()
-            else {
-                return Ok(());
-            };
-            let store = Store::create(&path, disk)?;
+                };
+                self.ask(
+                    Pick::MergeSave(disk, self.launch_build, self.load_compatibility),
+                    one(rfd::AsyncFileDialog::new().set_file_name(name).save_file()),
+                );
+            }
+            Err(e) => self.report(Err(e), ""),
+        }
+    }
+    fn merge_save(&mut self, disk: Disk, launch: bool, compat: bool, path: PathBuf) {
+        let result = Store::create(&path, disk).map(|store| {
             self.store = Some(Arc::new(Mutex::new(store)));
             self.selected = None;
             self.readonly = true;
             self.merge_open = false;
-            Ok(())
-        })();
-        self.report(result, if self.launch_build && self.load_compatibility { "LOAD-compatible launch disk created for ROM 920413. Mount in drive 8 and RUN \"START\". Experimental; hardware test pending." } else if self.launch_build { "Resident launch disk created. Mount in drive 8 and RUN \"START\". Direct-SD reader; hardware test pending." } else { "Experimental merge created and verified offline. ROM 920413 cannot load later banks; a modified ROM or custom loader is required. Read-only." });
+        });
+        self.report(result, if launch && compat { "LOAD-compatible launch disk created for ROM 920413. Mount in drive 8 and RUN \"START\". Experimental; hardware test pending." } else if launch { "Resident launch disk created. Mount in drive 8 and RUN \"START\". Direct-SD reader; hardware test pending." } else { "Experimental merge created and verified offline. ROM 920413 cannot load later banks; a modified ROM or custom loader is required. Read-only." });
     }
     fn start_mount(&mut self) {
         #[cfg(windows)]
@@ -307,29 +419,41 @@ impl Studio {
                 self.report(Err(e), "");
                 return;
             }
-            if let Some(p) = rfd::FileDialog::new()
-                .set_title("Choose an EMPTY folder for the Finder volume")
-                .pick_folder()
-            {
-                match d65_studio::mount::start(
-                    self.store.as_ref().unwrap().clone(),
-                    &p,
-                    self.readonly,
-                ) {
-                    Ok(h) => {
-                        self.mount_thread = Some(h);
-                        self.mountpoint = Some(p);
-                        self.report(Ok(()),"Mount requested. The volume will appear in file manager; eject it before editing here.")
-                    }
-                    Err(e) => self.report(Err(e), ""),
-                }
-            }
+            self.ask(
+                Pick::Mount,
+                one(rfd::AsyncFileDialog::new()
+                    .set_title("Choose an EMPTY folder for the Finder volume")
+                    .pick_folder()),
+            );
         }
         #[cfg(not(any(target_os="macos", windows)))] self.report(Err("file manager mounting is available on macOS. Windows drive mounting is not implemented yet.".into()),"");
+    }
+    #[allow(unused_variables)]
+    fn mount_at(&mut self, p: PathBuf) {
+        #[cfg(target_os = "macos")]
+        match d65_studio::mount::start(self.store.as_ref().unwrap().clone(), &p, self.readonly) {
+            Ok(h) => {
+                self.mount_thread = Some(h);
+                self.mountpoint = Some(p);
+                self.report(Ok(()),"Mount requested. The volume will appear in file manager; eject it before editing here.")
+            }
+            Err(e) => self.report(Err(e), ""),
+        }
     }
 }
 impl eframe::App for Studio {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if let Some((_, dialog)) = self.dialog.as_mut() {
+            if let Poll::Ready(paths) = dialog
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+            {
+                let (pick, _) = self.dialog.take().unwrap();
+                self.picked_paths(pick, paths);
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            }
+        }
         if self.sd_task.as_ref().is_some_and(|task| task.is_finished()) {
             match self
                 .sd_task
@@ -417,12 +541,12 @@ impl eframe::App for Studio {
                             )
                             .clicked()
                         {
-                            if let Some(p) = rfd::FileDialog::new()
-                                .add_filter("MEGA65 images", &["d65", "d81"])
-                                .pick_file()
-                            {
-                                self.load(p)
-                            }
+                            self.ask(
+                                Pick::Open,
+                                one(rfd::AsyncFileDialog::new()
+                                    .add_filter("MEGA65 images", &["d65", "d81"])
+                                    .pick_file()),
+                            );
                         }
                         if ui
                             .add_enabled(!mounted, egui::Button::new("Merge D81s…"))
@@ -459,7 +583,8 @@ impl eframe::App for Studio {
         });
         if let Some((disk, path, backup)) = snapshot {
             let writable = disk.validate_writable();
-            let can_edit = writable.is_ok() && !mounted;
+            let big = d65_studio::launcher::is_editable(&disk);
+            let can_edit = (writable.is_ok() || big) && !mounted;
             egui::SidePanel::left("disk").exact_width(248.0).frame(egui::Frame::new().fill(Color32::from_rgb(19,28,35)).inner_margin(20.0)).show(ctx,|ui|{ egui::ScrollArea::vertical().id_salt("sidebar_scroll").show(ui,|ui|{
                 ui.add_space(8.0);ui.label(RichText::new(disk.format.ext().to_uppercase()).size(44.0).color(TEAL).strong());ui.heading(disk.label());ui.label(format!("DISK ID  {}",disk.disk_id()));ui.add_space(24.0);
                 if writable.is_ok() {
@@ -470,7 +595,7 @@ impl eframe::App for Studio {
                     ui.add(egui::ProgressBar::new(used as f32/total as f32).fill(TEAL));
                     ui.label(format!("{:.2} MB used of {:.2} MB",used as f32*254.0/1_000_000.0,total as f32*254.0/1_000_000.0));
                     ui.label(format!("{:.0} KB available when rebuilding",(total-used) as f32*254.0/1000.0));
-                    ui.label("Includes START. Rebuild from your source images to add files.");
+                    ui.label(if big { "Includes START. Add, rename or delete files here; START is rebuilt each time." } else { "Includes START. Rebuild from your source images to add files." });
                 } else { ui.label(RichText::new("READ-ONLY INSPECTION").color(TEAL));ui.label("Free space is not available for this layout."); }
                 ui.add_space(14.0);ui.label(format!("Container: {} bytes",disk.bytes.len()));
                 if disk.format==Format::D65{ui.add_space(8.0);ui.label(RichText::new("Standard images are editable. Experimental merges are read-only. Later banks require the START custom reader or compatible software.").color(Color32::from_rgb(215,184,117)));}
@@ -517,7 +642,7 @@ impl eframe::App for Studio {
                         });
                     });
                     ui.add_space(8.0);
-                    if let Err(e) = writable {
+                    if let (Err(e), false) = (writable, big) {
                         ui.label(RichText::new(format!("Read-only: {e}")).color(Color32::YELLOW));
                     }
                     let entries = disk.entries().unwrap_or_default();
@@ -705,30 +830,30 @@ impl eframe::App for Studio {
                         ui.radio_value(&mut self.format, Format::D65, "D65 · MEGA65");
                         ui.radio_value(&mut self.format, Format::D81, "D81 · 1581");
                     });
-                    ui.label("Both use the supported 800 KiB filesystem geometry.");
+                    ui.add_enabled_ui(self.format == Format::D65, |ui| {
+                        ui.checkbox(&mut self.big, "Large D65 with START resident reader");
+                    });
+                    let big = self.big && self.format == Format::D65;
+                    ui.label(if big {
+                        "About 5.4 MB shared by START and your files. RUN \"START\" on the MEGA65 for a menu of BASIC programs; the resident reader loads the rest. Files are packed again on every change."
+                    } else {
+                        "Both use the supported 800 KiB filesystem geometry."
+                    });
                     ui.horizontal(|ui| {
                         if ui.button("Create…").clicked() {
-                            match Disk::create(self.format, &self.label, &self.id) {
+                            let disk = if big {
+                                d65_studio::launcher::create_editable(&self.label, &self.id)
+                            } else {
+                                Disk::create(self.format, &self.label, &self.id)
+                            };
+                            match disk {
                                 Err(e) => self.report(Err(e), ""),
                                 Ok(d) => {
-                                    if let Some(p) = rfd::FileDialog::new()
-                                        .set_file_name(format!(
-                                            "{}.{}",
-                                            self.label,
-                                            self.format.ext()
-                                        ))
-                                        .save_file()
-                                    {
-                                        match Store::create(&p, d) {
-                                            Ok(s) => {
-                                                self.store = Some(Arc::new(Mutex::new(s)));
-                                                self.selected = None;
-                                                self.new_open = false;
-                                                self.report(Ok(()), "New image created.");
-                                            }
-                                            Err(e) => self.report(Err(e), ""),
-                                        }
-                                    }
+                                    let name = format!("{}.{}", self.label, self.format.ext());
+                                    self.ask(
+                                        Pick::Create(d),
+                                        one(rfd::AsyncFileDialog::new().set_file_name(name).save_file()),
+                                    );
                                 }
                             }
                         }
@@ -791,8 +916,9 @@ impl eframe::App for Studio {
 }
 fn cli(args: &[String]) -> Result<()> {
     match args.first().map(String::as_str){
+        Some("create") if args.len()==4&&args[1].eq_ignore_ascii_case("d65big")=>{Store::create(Path::new(&args[2]),d65_studio::launcher::create_editable(&args[3],"65")?)?;println!("Large D65 with START resident reader created. Use add to put files on it; START is rebuilt each time.");},
         Some("create") if args.len()==4=>{let format=if args[1].eq_ignore_ascii_case("d81"){Format::D81}else if args[1].eq_ignore_ascii_case("d65"){Format::D65}else{return Err("Format must be d65 or d81".into())};Store::create(Path::new(&args[2]),Disk::create(format,&args[3],"65")?)?;},
-        Some("list") if args.len()==2=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;println!("{} [{}] {} bytes",d.label(),d.disk_id(),d.bytes.len());for e in d.entries()?{println!("{:5} {:16} {}",e.blocks,e.name,e.type_name())}println!("{} blocks free",d.free_blocks());d.validate_writable()?;},
+        Some("list") if args.len()==2=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;println!("{} [{}] {} bytes",d.label(),d.disk_id(),d.bytes.len());for e in d.entries()?{println!("{:5} {:16} {}",e.blocks,e.name,e.type_name())}match d.resident_space().filter(|_|d65_studio::launcher::is_editable(&d)){Some((used,total))=>println!("{} blocks free (resident reader, START included)",total-used),None=>{println!("{} blocks free",d.free_blocks());d.validate_writable()?;}}},
         Some("add") if args.len()==4=>{let mut s=Store::open(Path::new(&args[1]))?;let data=fs::read(&args[2]).map_err(|e|e.to_string())?;let kind=match Path::new(&args[2]).extension().and_then(|x|x.to_str()).unwrap_or("").to_ascii_lowercase().as_str(){"seq"=>1,"usr"=>3,_=>2};s.change(|d|d.put(&args[3],kind,&data,false))?;},
         Some("launch" | "launch-compat") if args.len()>=3=>{let sources:Result<Vec<_>>=args[2..].iter().map(|p|Disk::parse(fs::read(p).map_err(|e|e.to_string())?)).collect();Store::create(Path::new(&args[1]),d65_studio::launcher::build_with_compat(&sources?, args[0]=="launch-compat")?)?;println!("Resident launch disk created. RUN \"START\" from drive 8. About 5.4 MB minus START; 55,041-byte program limit. Direct-SD reader: hardware validation pending.");},
         Some("merge") if args.len()>=4=>{let sources:Result<Vec<_>>=args[2..].iter().map(|p|Disk::parse(fs::read(p).map_err(|e|e.to_string())?)).collect();Store::create(Path::new(&args[1]),Disk::merge_d81(&sources?)?)?;println!("Experimental merge verified offline. Read-only; ROM 920413 cannot load later banks. A modified ROM or custom loader is required.");},
@@ -805,7 +931,7 @@ fn cli(args: &[String]) -> Result<()> {
         Some("serve") if args.len()==2=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let b=d65_studio::mount::bridge(s,false)?;println!("{}",b.url);loop{std::thread::sleep(std::time::Duration::from_secs(1));}},
         #[cfg(any(target_os="macos", windows))]
         Some("mount") if args.len()==3||args.len()==4=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let ro=args.get(3).map(String::as_str)==Some("--read-only");d65_studio::mount::start(s,Path::new(&args[2]),ro)?.join().map_err(|_|"Mount worker panicked")??;},
-        _=>return Err("Usage: d65-studio [IMAGE] | create d65|d81 PATH LABEL | list IMAGE | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
+        _=>return Err("Usage: d65-studio [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
     }
     Ok(())
 }
@@ -836,8 +962,10 @@ fn main() -> eframe::Result<()> {
         "D65 Studio",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
-                .with_inner_size([1120.0, 790.0])
-                .with_min_inner_size([880.0, 650.0]),
+                // No minimum size: on macOS a minimum is applied twice after the
+                // window moves between Retina and standard displays, leaving a
+                // window larger than the screen that cannot be shrunk.
+                .with_inner_size([1120.0, 790.0]),
             ..Default::default()
         },
         Box::new(move |cc| {

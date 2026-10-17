@@ -57,7 +57,10 @@ impl Store {
         }
         let mut next = self.disk.clone();
         edit(&mut next)?;
-        next.validate_writable()?;
+        // Editable resident images are verified by the launcher's repack.
+        if !crate::launcher::is_editable(&next) {
+            next.validate_writable()?;
+        }
         if self.backup.is_none() {
             let stamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
