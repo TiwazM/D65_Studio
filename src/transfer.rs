@@ -72,8 +72,13 @@ fn on_path(name: &str) -> Option<PathBuf> {
 /// `D65_MEGA65_FTP` path, then PATH, then where MEGA65 Studio and M65Connect
 /// keep their copies.
 pub fn find_tools() -> Vec<Tool> {
+    find_tools_with(&[])
+}
+/// `find_tools` with the user's own paths first (blank or missing ones are
+/// ignored, so automatic detection still applies).
+pub fn find_tools_with(overrides: &[(Kind, PathBuf)]) -> Vec<Tool> {
     let h = home();
-    let mut candidates = Vec::new();
+    let mut candidates: Vec<(Kind, PathBuf)> = overrides.to_vec();
     for (var, kind) in [
         ("D65_M65RS", Kind::M65rs),
         ("D65_MEGA65_FTP", Kind::Mega65Ftp),
@@ -127,53 +132,76 @@ pub fn serial_devices() -> Vec<String> {
     out
 }
 
-/// The commands that upload `image` as `name` in the card's root folder,
-/// check that it landed in one contiguous run (m65rs reports the chain), and
-/// optionally ask the Hypervisor to mount it.
-pub fn plan(tool: &Tool, link: &Link, image: &Path, name: &str, mount: bool) -> Result<Vec<Step>> {
+/// The commands of one transfer. `on_fragmented` removes the file again when
+/// the chain read back is not one run, so a useless image never stays on the
+/// card.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Plan {
+    pub steps: Vec<Step>,
+    pub on_fragmented: Vec<Step>,
+}
+/// The transfer tool to write with: mega65_ftp searches for one free run of
+/// the right length before writing, m65rs takes free clusters one at a time.
+pub fn preferred(tools: &[Tool], ethernet: bool) -> Option<&Tool> {
+    tools
+        .iter()
+        .find(|t| t.kind == Kind::Mega65Ftp)
+        .or_else(|| tools.iter().find(|t| !ethernet || t.supports_ethernet()))
+}
+
+/// Upload `image` as `name` in the card's root folder with `writer`, read the
+/// cluster chain back with an m65rs from `tools` (direct register mode, so
+/// nothing is loaded into the MEGA65), optionally mount it, and leave the
+/// MEGA65 at its READY prompt rather than on the transfer helper.
+pub fn plan(
+    writer: &Tool,
+    tools: &[Tool],
+    link: &Link,
+    image: &Path,
+    name: &str,
+    mount: bool,
+) -> Result<Plan> {
     fat_export::short_name(name)?;
     let image = image.to_string_lossy().into_owned();
+    let serial = match link {
+        Link::Serial(d) => Some(d.clone()),
+        Link::Ethernet(_) => None,
+    };
+    let m65rs = tools.iter().find(|t| t.kind == Kind::M65rs);
+    let rs = |t: &Tool, label: &'static str, args: &[&str]| {
+        let mut v: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        if let Some(Some(d)) = &serial {
+            v.extend(["--device".to_string(), d.clone()]);
+        }
+        Step {
+            label,
+            program: t.path.clone(),
+            args: v,
+        }
+    };
     let mut steps = Vec::new();
-    match tool.kind {
+    let mut on_fragmented = Vec::new();
+    match writer.kind {
         Kind::M65rs => {
-            let device = match link {
-                Link::Serial(d) => d.clone(),
-                Link::Ethernet(_) => {
-                    return Err("m65rs talks to the MEGA65 over the JTAG serial port only. Use mega65_ftp for Ethernet.".into())
-                }
-            };
-            let common = |args: &[&str], keep: bool| {
-                let mut v: Vec<String> = ["sd"].iter().chain(args).map(|s| s.to_string()).collect();
-                if let Some(d) = &device {
-                    v.extend(["--device".to_string(), d.clone()]);
-                }
-                if keep {
-                    v.push("--keep".into());
-                }
-                v
-            };
-            let mut put = common(&["put", &image, name], true);
-            put.push("--force".into());
-            steps.push(Step {
-                label: "put",
-                program: tool.path.clone(),
-                args: put,
-            });
-            steps.push(Step {
-                label: "clusters",
-                program: tool.path.clone(),
-                args: common(&["clusters", name], mount),
-            });
-            if mount {
-                steps.push(Step {
-                    label: "mount",
-                    program: tool.path.clone(),
-                    args: common(&["mount", name], false),
-                });
+            if serial.is_none() {
+                return Err("m65rs talks to the MEGA65 over the JTAG serial port only. Use mega65_ftp for Ethernet.".into());
             }
+            steps.push(rs(writer, "put", &["sd", "put", &image, name, "--force"]));
+            steps.push(rs(
+                writer,
+                "clusters",
+                &["sd", "clusters", name, "--direct"],
+            ));
+            if mount {
+                steps.push(rs(writer, "mount", &["sd", "mount", name, "--force"]));
+            } else {
+                steps.push(rs(writer, "reset", &["reset"]));
+            }
+            on_fragmented.push(rs(writer, "delete", &["sd", "del", name, "--force"]));
+            on_fragmented.push(rs(writer, "reset", &["reset"]));
         }
         Kind::Mega65Ftp => {
-            let mut args: Vec<String> = match link {
+            let connection: Vec<String> = match link {
                 Link::Serial(Some(d)) => {
                     vec!["-l".into(), d.clone(), "-s".into(), "2000000".into()]
                 }
@@ -187,20 +215,39 @@ pub fn plan(tool: &Tool, link: &Link, image: &Path, name: &str, mount: bool) -> 
                 Link::Ethernet(Some(a)) => vec!["-i".into(), a.clone()],
                 Link::Ethernet(None) => vec!["-e".into()],
             };
-            args.extend(["-y", "-F", "-0", "1", "-c"].map(String::from));
-            args.push(format!("put {image} {name}"));
-            if mount {
-                args.extend(["-c".to_string(), format!("mount {name}")]);
+            let ftp = |label: &'static str, commands: &[String]| {
+                let mut args = connection.clone();
+                args.extend(["-y", "-F", "-0", "1"].map(String::from));
+                for c in commands {
+                    args.extend(["-c".to_string(), c.clone()]);
+                }
+                // "quit" releases the helper and resets the MEGA65 to READY.
+                args.extend(["-c".to_string(), "quit".to_string()]);
+                Step {
+                    label,
+                    program: writer.path.clone(),
+                    args,
+                }
+            };
+            let verify = m65rs.filter(|_| serial.is_some());
+            let mut commands = vec![format!("put {image} {name}")];
+            if mount && verify.is_none() {
+                commands.push(format!("mount {name}"));
             }
-            args.extend(["-c".to_string(), "quit".to_string()]);
-            steps.push(Step {
-                label: "put",
-                program: tool.path.clone(),
-                args,
-            });
+            steps.push(ftp("put", &commands));
+            if let Some(t) = verify {
+                steps.push(rs(t, "clusters", &["sd", "clusters", name, "--direct"]));
+                if mount {
+                    steps.push(ftp("mount", &[format!("mount {name}")]));
+                }
+                on_fragmented.push(ftp("delete", &[format!("del {name}")]));
+            }
         }
     }
-    Ok(steps)
+    Ok(Plan {
+        steps,
+        on_fragmented,
+    })
 }
 
 /// The cluster chain from m65rs' `sd clusters` output.
@@ -214,12 +261,15 @@ pub fn parse_chain(text: &str) -> Option<Vec<u32>> {
 pub fn contiguous(chain: &[u32]) -> bool {
     !chain.is_empty() && chain.windows(2).all(|w| w[1] == w[0] + 1)
 }
+fn runs(chain: &[u32]) -> usize {
+    1 + chain.windows(2).filter(|w| w[1] != w[0] + 1).count()
+}
 
 /// Run the steps, reporting each output line (progress uses carriage returns)
 /// as it arrives. Returns the last lines of output on success.
-pub fn run(steps: &[Step], mut progress: impl FnMut(&str)) -> Result<String> {
+pub fn run(plan: &Plan, mut progress: impl FnMut(&str)) -> Result<String> {
     let mut log = String::new();
-    for step in steps {
+    for step in &plan.steps {
         progress(&format!("{}: {}…", step.label, step.program.display()));
         let mut child = Command::new(&step.program)
             .args(&step.args)
@@ -291,8 +341,35 @@ pub fn run(steps: &[Step], mut progress: impl FnMut(&str)) -> Result<String> {
                 "Could not read the cluster chain back; check the file with m65rs sd clusters.",
             )?;
             if !contiguous(&chain) {
+                let mut removed = String::new();
+                for undo in &plan.on_fragmented {
+                    progress(&format!("{}: {}…", undo.label, undo.program.display()));
+                    let outcome = Command::new(&undo.program)
+                        .args(&undo.args)
+                        .stdin(Stdio::null())
+                        .output();
+                    match outcome {
+                        Ok(o) if o.status.success() => {
+                            if undo.label == "delete" {
+                                removed = " It has been deleted again.".into();
+                            }
+                        }
+                        Ok(o) => {
+                            removed = format!(
+                                " Deleting it failed: {}",
+                                String::from_utf8_lossy(&o.stderr).trim()
+                            );
+                            break;
+                        }
+                        Err(e) => {
+                            removed = format!(" Deleting it failed: {e}");
+                            break;
+                        }
+                    }
+                }
                 return Err(format!(
-                    "The image was written but is fragmented on the card ({} clusters, not in one run), so the MEGA65 cannot mount it. Delete it, free space on the card and send again.",
+                    "The image was written but landed in {} separate runs ({} clusters), so the MEGA65 cannot mount it.{removed} Free space on the card or write with mega65_ftp, which uses one run.",
+                    runs(&chain),
                     chain.len()
                 ));
             }
@@ -330,8 +407,14 @@ mod tests {
     #[test]
     fn plans_m65rs_and_mega65_ftp_commands() {
         let img = Path::new("/tmp/x.d65");
-        let s = plan(
-            &tool(Kind::M65rs),
+        let rs = tool(Kind::M65rs);
+        let ftp = Tool {
+            kind: Kind::Mega65Ftp,
+            path: PathBuf::from("/opt/mega65_ftp"),
+        };
+        let p = plan(
+            &rs,
+            &[rs.clone()],
             &Link::Serial(None),
             img,
             "GAME.D65",
@@ -339,61 +422,57 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            s.iter().map(|s| s.label).collect::<Vec<_>>(),
+            p.steps.iter().map(|s| s.label).collect::<Vec<_>>(),
             ["put", "clusters", "mount"]
         );
         assert_eq!(
-            s[0].args,
-            ["sd", "put", "/tmp/x.d65", "GAME.D65", "--keep", "--force"]
+            p.steps[0].args,
+            ["sd", "put", "/tmp/x.d65", "GAME.D65", "--force"]
         );
-        assert_eq!(s[1].args, ["sd", "clusters", "GAME.D65", "--keep"]);
-        assert_eq!(s[2].args, ["sd", "mount", "GAME.D65"]);
-        let s = plan(
-            &tool(Kind::M65rs),
+        assert_eq!(p.steps[1].args, ["sd", "clusters", "GAME.D65", "--direct"]);
+        assert_eq!(
+            p.on_fragmented[0].args,
+            ["sd", "del", "GAME.D65", "--force"]
+        );
+        let p = plan(
+            &rs,
+            &[rs.clone()],
             &Link::Serial(Some("/dev/cu.usbserial-101".into())),
             img,
             "GAME.D65",
             false,
         )
         .unwrap();
-        assert_eq!(s.len(), 2);
         assert_eq!(
-            s[1].args,
+            p.steps.iter().map(|s| s.label).collect::<Vec<_>>(),
+            ["put", "clusters", "reset"]
+        );
+        assert_eq!(
+            p.steps[1].args,
             [
                 "sd",
                 "clusters",
                 "GAME.D65",
+                "--direct",
                 "--device",
                 "/dev/cu.usbserial-101"
             ]
         );
-        assert!(plan(
-            &tool(Kind::M65rs),
-            &Link::Ethernet(None),
-            img,
-            "GAME.D65",
-            false
-        )
-        .is_err());
-        assert!(plan(
-            &tool(Kind::M65rs),
-            &Link::Serial(None),
-            img,
-            "game.d65",
-            false
-        )
-        .is_err());
-        let s = plan(
-            &tool(Kind::Mega65Ftp),
+        assert!(plan(&rs, &[], &Link::Ethernet(None), img, "GAME.D65", false).is_err());
+        assert!(plan(&rs, &[], &Link::Serial(None), img, "game.d65", false).is_err());
+        // mega65_ftp alone: one invocation does everything.
+        let p = plan(
+            &ftp,
+            &[ftp.clone()],
             &Link::Ethernet(Some("fe80::1%en0".into())),
             img,
             "GAME.D65",
             true,
         )
         .unwrap();
-        assert_eq!(s.len(), 1);
+        assert_eq!(p.steps.len(), 1);
         assert_eq!(
-            s[0].args,
+            p.steps[0].args,
             [
                 "-i",
                 "fe80::1%en0",
@@ -409,16 +488,31 @@ mod tests {
                 "quit"
             ]
         );
-        let s = plan(
-            &tool(Kind::Mega65Ftp),
+        assert!(p.on_fragmented.is_empty());
+        // mega65_ftp writes, m65rs reads the chain back, mega65_ftp mounts last.
+        let p = plan(
+            &ftp,
+            &[rs.clone(), ftp.clone()],
             &Link::Serial(Some("COM3".into())),
             img,
             "GAME.D65",
-            false,
+            true,
         )
         .unwrap();
-        assert_eq!(&s[0].args[..4], ["-l", "COM3", "-s", "2000000"]);
-        assert!(!s[0].args.iter().any(|a| a.starts_with("mount")));
+        assert_eq!(
+            p.steps.iter().map(|s| s.label).collect::<Vec<_>>(),
+            ["put", "clusters", "mount"]
+        );
+        assert_eq!(&p.steps[0].args[..4], ["-l", "COM3", "-s", "2000000"]);
+        assert!(!p.steps[0].args.iter().any(|a| a.starts_with("mount")));
+        assert_eq!(p.steps[1].program, rs.path);
+        let n = p.steps[2].args.len();
+        assert_eq!(p.steps[2].args[n - 3], "mount GAME.D65");
+        let n = p.on_fragmented[0].args.len();
+        assert_eq!(p.on_fragmented[0].args[n - 3], "del GAME.D65");
+        assert_eq!(preferred(&[rs.clone(), ftp.clone()], false), Some(&ftp));
+        assert_eq!(preferred(&[rs.clone()], false), Some(&rs));
+        assert_eq!(preferred(&[rs.clone()], true), None);
     }
     #[test]
     fn reads_cluster_chains() {
@@ -452,22 +546,45 @@ mod tests {
             program: script.clone(),
             args: vec![arg.into()],
         };
+        let plan = |steps: Vec<Step>, undo: Vec<Step>| Plan {
+            steps,
+            on_fragmented: undo,
+        };
         let mut seen = Vec::new();
-        let out = run(&[step("put", "put"), step("clusters", "clusters")], |l| {
-            seen.push(l.to_string())
-        })
+        let out = run(
+            &plan(
+                vec![step("put", "put"), step("clusters", "clusters")],
+                vec![],
+            ),
+            |l| seen.push(l.to_string()),
+        )
         .unwrap();
         assert!(seen.contains(&"50%".to_string()) && seen.contains(&"put done".to_string()));
         assert!(seen
             .iter()
             .any(|l| l.starts_with("Contiguous on the card: 3 clusters from 9")));
         assert!(out.contains("clusters done"));
-        let e = run(&[step("put", "fail")], |_| {}).unwrap_err();
+        let e = run(&plan(vec![step("put", "fail")], vec![]), |_| {}).unwrap_err();
         assert!(e.starts_with("put failed") && e.contains("boom"), "{e}");
-        std::fs::write(&script, "#!/bin/sh\necho '3 clusters: [9, 11, 12]'\n").unwrap();
-        assert!(run(&[step("clusters", "x")], |_| {})
-            .unwrap_err()
-            .contains("fragmented"));
+        let marker = dir.path().join("deleted");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\n[ \"$1\" = del ] && touch '{}' && exit 0\necho '3 clusters: [9, 11, 12]'\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        let e = run(
+            &plan(vec![step("clusters", "x")], vec![step("delete", "del")]),
+            |_| {},
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("2 separate runs") && e.contains("deleted again"),
+            "{e}"
+        );
+        assert!(marker.exists());
     }
     #[test]
     fn finds_tools_from_environment() {
@@ -487,5 +604,19 @@ mod tests {
             }
         );
         assert!(tools.iter().all(|t| t.path.is_file()));
+        let ftp = dir.path().join("mega65_ftp");
+        std::fs::write(&ftp, "").unwrap();
+        let tools = find_tools_with(&[
+            (Kind::Mega65Ftp, ftp.clone()),
+            (Kind::M65rs, dir.path().join("gone")),
+        ]);
+        assert_eq!(
+            tools[0],
+            Tool {
+                kind: Kind::Mega65Ftp,
+                path: ftp
+            }
+        );
+        assert!(!tools.iter().any(|t| t.path.ends_with("gone")));
     }
 }

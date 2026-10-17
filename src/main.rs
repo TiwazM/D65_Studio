@@ -28,6 +28,7 @@ enum Pick {
     MergeSave(Disk, bool, bool),
     Create(Disk),
     Replace(Entry),
+    ToolPath(transfer::Kind),
 }
 fn home() -> PathBuf {
     std::env::var_os("HOME")
@@ -47,6 +48,31 @@ fn recent_file() -> PathBuf {
         home().join(".config")
     };
     base.join("D65 Studio").join("recent.txt")
+}
+/// User settings next to the recent list: `m65rs=PATH` and `mega65_ftp=PATH`.
+fn settings_file() -> PathBuf {
+    recent_file().with_file_name("settings.txt")
+}
+fn load_settings() -> (String, String) {
+    let text = fs::read_to_string(settings_file()).unwrap_or_default();
+    let get = |key: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(key).and_then(|r| r.strip_prefix('=')))
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    };
+    (get("m65rs"), get("mega65_ftp"))
+}
+fn tool_overrides((m65rs, ftp): &(String, String)) -> Vec<(transfer::Kind, PathBuf)> {
+    [
+        (transfer::Kind::M65rs, m65rs),
+        (transfer::Kind::Mega65Ftp, ftp),
+    ]
+    .into_iter()
+    .filter(|(_, p)| !p.trim().is_empty())
+    .map(|(k, p)| (k, PathBuf::from(p.trim())))
+    .collect()
 }
 fn load_recent() -> Vec<PathBuf> {
     fs::read_to_string(recent_file())
@@ -106,6 +132,9 @@ struct Studio {
     send_progress: Arc<Mutex<Vec<String>>>,
     send_started: Option<std::time::Instant>,
     send_result: Option<String>,
+    prefs_open: bool,
+    tool_m65rs: String,
+    tool_ftp: String,
     dialog: Option<(Pick, Dialog)>,
     rename: String,
     edit: String,
@@ -154,6 +183,9 @@ impl Default for Studio {
             send_progress: Arc::new(Mutex::new(Vec::new())),
             send_started: None,
             send_result: None,
+            prefs_open: false,
+            tool_m65rs: load_settings().0,
+            tool_ftp: load_settings().1,
             dialog: None,
             rename: String::new(),
             edit: String::new(),
@@ -249,13 +281,29 @@ impl Studio {
             Err(e) => self.report(Err(e), ""),
         }
     }
+    fn save_settings(&self) {
+        let f = settings_file();
+        if let Some(dir) = f.parent() {
+            let _ = fs::create_dir_all(dir);
+        }
+        let _ = fs::write(
+            f,
+            format!(
+                "m65rs={}\nmega65_ftp={}\n",
+                self.tool_m65rs.trim(),
+                self.tool_ftp.trim()
+            ),
+        );
+    }
+    fn tools(&self) -> Vec<Tool> {
+        transfer::find_tools_with(&tool_overrides(&(
+            self.tool_m65rs.clone(),
+            self.tool_ftp.clone(),
+        )))
+    }
     fn open_send(&mut self, ethernet: bool) {
-        self.send_tools = transfer::find_tools();
-        self.send_tool = self
-            .send_tools
-            .iter()
-            .find(|t| !ethernet || t.supports_ethernet())
-            .cloned();
+        self.send_tools = self.tools();
+        self.send_tool = transfer::preferred(&self.send_tools, ethernet).cloned();
         self.send_ethernet = ethernet;
         if let Some(s) = self.store.as_ref() {
             let s = s.lock().unwrap();
@@ -287,7 +335,14 @@ impl Studio {
             Link::Serial((!blank(&self.send_device)).then(|| self.send_device.clone()))
         };
         let name = self.send_name.trim().to_ascii_uppercase();
-        let steps = match transfer::plan(&tool, &link, &path, &name, self.send_mount) {
+        let steps = match transfer::plan(
+            &tool,
+            &self.send_tools,
+            &link,
+            &path,
+            &name,
+            self.send_mount,
+        ) {
             Ok(s) => s,
             Err(e) => {
                 self.report(Err(e), "");
@@ -331,6 +386,14 @@ impl Studio {
             Pick::Sd(..) => {}
             Pick::MergeSources => self.merge_paths(paths),
             Pick::MergeSave(disk, launch, compat) => self.merge_save(disk, launch, compat, first),
+            Pick::ToolPath(kind) => {
+                let p = first.display().to_string();
+                match kind {
+                    transfer::Kind::M65rs => self.tool_m65rs = p,
+                    transfer::Kind::Mega65Ftp => self.tool_ftp = p,
+                }
+                self.save_settings();
+            }
             Pick::Replace(e) => {
                 let r = fs::read(&first)
                     .map_err(|e| e.to_string())
@@ -896,6 +959,7 @@ impl eframe::App for Studio {
                             });
                         });
                         ui.separator();
+                        if ui.button("Preferences…").clicked() { self.prefs_open = true; ui.close_menu(); }
                         if ui.add_enabled(has_disk && !mounted, egui::Button::new("Close Disk").shortcut_text("⌘W")).clicked() { self.close_disk(); ui.close_menu(); }
                     });
                     ui.menu_button("Edit", |ui| {
@@ -1330,22 +1394,53 @@ impl eframe::App for Studio {
                     });
                 });
         }
+        if self.prefs_open {
+            egui::Window::new("Preferences").collapsible(false).resizable(false).default_width(560.0).show(ctx, |ui| {
+                ui.label("Transfer tools for Send to MEGA65. Leave a field blank to find the tool automatically (PATH, MEGA65 Studio, M65Connect, or the D65_M65RS / D65_MEGA65_FTP variables).");
+                ui.add_space(6.0);
+                for (label, kind) in [("m65rs (mega65-jtag-rs)", transfer::Kind::M65rs), ("mega65_ftp (mega65-tools / M65Connect)", transfer::Kind::Mega65Ftp)] {
+                    ui.label(label);
+                    ui.horizontal(|ui| {
+                        let field = match kind { transfer::Kind::M65rs => &mut self.tool_m65rs, transfer::Kind::Mega65Ftp => &mut self.tool_ftp };
+                        let changed = ui.add(egui::TextEdit::singleline(field).desired_width(430.0).hint_text("automatic")).changed();
+                        if ui.button("Browse…").clicked() {
+                            self.ask(Pick::ToolPath(kind), one(rfd::AsyncFileDialog::new().set_title("Choose the program").pick_file()));
+                        }
+                        if changed { self.save_settings(); }
+                    });
+                }
+                ui.add_space(6.0);
+                let found = self.tools();
+                if found.is_empty() {
+                    ui.colored_label(Color32::YELLOW, "No transfer tool found right now.");
+                } else {
+                    ui.label(RichText::new("Found now:").small().color(Color32::GRAY));
+                    for t in &found {
+                        ui.label(RichText::new(format!("{} — {}", t.name(), t.path.display())).small());
+                    }
+                }
+                ui.label(RichText::new(format!("Saved in {}", settings_file().display())).small().color(Color32::GRAY));
+                ui.add_space(6.0);
+                if ui.button("Close").clicked() { self.prefs_open = false; }
+            });
+        }
         if self.send_open {
             egui::Window::new("Send to MEGA65").collapsible(false).resizable(false).default_width(520.0).show(ctx, |ui| {
                 ui.label("The MEGA65 writes the image to its own SD card in one contiguous run, so nothing is written to a card from this computer and no administrator prompt appears.");
                 ui.label("The MEGA65 must be switched on, connected, and at the READY prompt. The transfer helper replaces whatever program is in its memory.");
                 ui.add_space(6.0);
                 if self.send_tools.is_empty() {
-                    ui.colored_label(Color32::YELLOW, "No transfer tool found. Install MEGA65 Studio (m65rs) or M65Connect (mega65_ftp), or set D65_M65RS / D65_MEGA65_FTP to the program, then reopen this window.");
+                    ui.colored_label(Color32::YELLOW, "No transfer tool found. Install MEGA65 Studio (m65rs) or M65Connect (mega65_ftp), or set its path under File › Preferences…, then reopen this window.");
                 } else {
                     let selected = self.send_tool.as_ref().map(|t| format!("{} — {}", t.name(), t.path.display())).unwrap_or_else(|| "Choose a tool".into());
-                    egui::ComboBox::from_label("Tool").width(420.0).selected_text(selected).show_ui(ui, |ui| {
+                    egui::ComboBox::from_label("Writer").width(420.0).selected_text(selected).show_ui(ui, |ui| {
                         for t in self.send_tools.clone() {
                             let label = format!("{} — {}", t.name(), t.path.display());
                             ui.selectable_value(&mut self.send_tool, Some(t), label);
                         }
                     });
                 }
+                ui.label(RichText::new("mega65_ftp writes the image in one run; m65rs takes free clusters one at a time and can fragment it (a fragmented result is deleted again). When both are installed the chain is read back with m65rs.").small().color(Color32::GRAY));
                 let ethernet_ok = self.send_tool.as_ref().is_some_and(|t| t.supports_ethernet());
                 if !ethernet_ok { self.send_ethernet = false; }
                 ui.horizontal(|ui| {
@@ -1431,8 +1526,8 @@ fn cli(args: &[String]) -> Result<()> {
             let image=fs::canonicalize(&args[1]).map_err(|e|e.to_string())?;Disk::parse(fs::read(&image).map_err(|e|e.to_string())?)?;
             let name=args[2].to_ascii_uppercase();let (mut link,mut mount,mut tool)=(Link::Serial(None),false,None);let mut i=3;
             while i<args.len(){let next=args.get(i+1).filter(|a|!a.starts_with("--")).cloned();match args[i].as_str(){"--mount"=>mount=true,"--ethernet"=>{if next.is_some(){i+=1}link=Link::Ethernet(next)},"--serial"=>{if next.is_some(){i+=1}link=Link::Serial(next)},"--tool"=>{tool=next.ok_or("--tool needs a path")?.into();i+=1},o=>return Err(format!("Unknown option {o}"))}i+=1}
-            let tool=match tool{Some(p)=>{let p=PathBuf::from(p);Tool{kind:if p.file_name().unwrap_or_default().to_string_lossy().contains("ftp"){transfer::Kind::Mega65Ftp}else{transfer::Kind::M65rs},path:p}},None=>transfer::find_tools().into_iter().find(|t|!matches!(link,Link::Ethernet(_))||t.supports_ethernet()).ok_or("No transfer tool found. Install MEGA65 Studio (m65rs) or M65Connect (mega65_ftp), or pass --tool PATH.")?};
-            let steps=transfer::plan(&tool,&link,&image,&name,mount)?;let tail=transfer::run(&steps,|l|println!("{l}"))?;println!("Sent {name} to the MEGA65's SD card with {}.\n{tail}",tool.name());},
+            let tool=match tool{Some(p)=>{let p=PathBuf::from(p);Tool{kind:if p.file_name().unwrap_or_default().to_string_lossy().contains("ftp"){transfer::Kind::Mega65Ftp}else{transfer::Kind::M65rs},path:p}},None=>transfer::preferred(&transfer::find_tools_with(&tool_overrides(&load_settings())),matches!(link,Link::Ethernet(_))).cloned().ok_or("No transfer tool found. Install MEGA65 Studio (m65rs) or M65Connect (mega65_ftp), or pass --tool PATH.")?};
+            let tools=transfer::find_tools_with(&tool_overrides(&load_settings()));let steps=transfer::plan(&tool,&tools,&link,&image,&name,mount)?;let tail=transfer::run(&steps,|l|println!("{l}"))?;println!("Sent {name} to the MEGA65's SD card with {}.\n{tail}",tool.name());},
         Some("update-start") if args.len()==2=>{let mut s=Store::open(Path::new(&args[1]))?;if !d65_studio::launcher::start_outdated(&s.disk)?{println!("START is already current.");}else{s.change(|d|d65_studio::launcher::update_start(d))?;println!("START replaced with the current reader and menu. Files are unchanged; a backup was kept beside the image.");}},
         Some("create") if args.len()==4=>{let format=if args[1].eq_ignore_ascii_case("d81"){Format::D81}else if args[1].eq_ignore_ascii_case("d65"){Format::D65}else{return Err("Format must be d65 or d81".into())};Store::create(Path::new(&args[2]),Disk::create(format,&args[3],"65")?)?;},
         Some("list") if args.len()==2=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;println!("{} [{}] {} bytes",d.label(),d.disk_id(),d.bytes.len());for e in d.entries()?{println!("{:5} {:16} {}",e.blocks,e.name,e.type_name())}match d.resident_space().filter(|_|d65_studio::launcher::is_editable(&d)){Some((used,total))=>{println!("{} blocks free (resident reader, START included)",total-used);println!("START {}",if d65_studio::launcher::start_outdated(&d)?{"is older than this version of D65 Studio: run update-start"}else{"is current"});}None=>{println!("{} blocks free",d.free_blocks());d.validate_writable()?;}}},

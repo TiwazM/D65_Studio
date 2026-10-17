@@ -97,14 +97,14 @@ These are observed results, not a blanket claim that every D65 image, SD card, R
 
 ## Sending an image to the MEGA65
 
-**File › Send to MEGA65** uploads the open image through the MEGA65 itself, over the USB JTAG adapter's serial monitor or over Ethernet, using a copy of `m65rs` (MEGA65 Studio / mega65-jtag-rs) or `mega65_ftp` (mega65-tools, bundled with M65Connect) found on this computer. The MEGA65 writes the file to its own SD card in one contiguous run, so no card is unmounted or opened raw on the computer and no administrator prompt appears. With `m65rs` the cluster chain is read back afterwards and the transfer fails loudly if the file is not contiguous. The dialog can also ask the Hypervisor to mount the image as drive 8. The MEGA65 must be at the READY prompt; the transfer helper replaces whatever program is in its memory. The same from the command line:
+**File › Send to MEGA65** uploads the open image through the MEGA65 itself, over the USB JTAG adapter's serial monitor or over Ethernet, using a copy of `m65rs` (MEGA65 Studio / mega65-jtag-rs) or `mega65_ftp` (mega65-tools, bundled with M65Connect) found on this computer. The MEGA65 writes the file to its own SD card in one contiguous run, so no card is unmounted or opened raw on the computer and no administrator prompt appears. The cluster chain is read back afterwards and the transfer fails loudly if the file is not contiguous. On 17 October 2026 a full-size image sent this way over JTAG landed in one run, mounted, and ran its last menu entry from the high sectors. The dialog can also ask the Hypervisor to mount the image as drive 8. The MEGA65 must be at the READY prompt; the transfer helper replaces whatever program is in its memory. The same from the command line:
 
 ```sh
 d65-studio send GAME.d65 GAME.D65 --mount
 d65-studio send GAME.d65 GAME.D65 --ethernet
 ```
 
-`--serial PORT`, `--ethernet IPV6` and `--tool PATH` pick the port, address and program explicitly; `D65_M65RS` and `D65_MEGA65_FTP` can point at the programs. The direct SD-card export below remains available when no MEGA65 is connected.
+`--serial PORT`, `--ethernet IPV6` and `--tool PATH` pick the port, address and program explicitly. **File › Preferences…** stores the paths of `m65rs` and `mega65_ftp` when they are not found automatically (PATH, MEGA65 Studio, M65Connect, or the `D65_M65RS` / `D65_MEGA65_FTP` variables). When both tools are present the image is written with `mega65_ftp`, which allocates one run, and the cluster chain is read back with `m65rs`; `m65rs` on its own takes free clusters one at a time and may fragment the file, in which case the transfer deletes it again and says so. The direct SD-card export below remains available when no MEGA65 is connected.
 
 ## SD-card export: caution
 
