@@ -1,4 +1,4 @@
-use d65_studio::{
+use mega65_disklab::{
     disk::{Disk, Format, D65_SIZE},
     store::Store,
 };
@@ -211,7 +211,7 @@ fn independent_freezer_fixture() {
 
 #[test]
 fn host_files_map_to_names_and_types() {
-    use d65_studio::disk::import_name;
+    use mega65_disklab::disk::import_name;
     use std::path::Path;
     assert_eq!(
         import_name(Path::new("/x/game.prg")).unwrap(),
@@ -247,7 +247,7 @@ fn host_files_map_to_names_and_types() {
 
 #[test]
 fn disk_images_import_all_of_their_files() {
-    use d65_studio::disk::{import_files, Disk, Format};
+    use mega65_disklab::disk::{import_files, Disk, Format};
     let dir = tempfile::tempdir().unwrap();
     let mut d81 = Disk::create(Format::D81, "SRC", "65").unwrap();
     d81.put(
@@ -268,7 +268,7 @@ fn disk_images_import_all_of_their_files() {
             .collect::<Vec<_>>(),
         [("GAME", 2, 12), ("LEVELS", 1, 70_000)]
     );
-    let resident = d65_studio::launcher::build(&[d81]).unwrap();
+    let resident = mega65_disklab::launcher::build(&[d81]).unwrap();
     let p = dir.path().join("comp.d65");
     std::fs::write(&p, &resident.bytes).unwrap();
     assert_eq!(
@@ -292,7 +292,7 @@ fn disk_images_import_all_of_their_files() {
         import_files(&prg).unwrap(),
         vec![("DEMO".to_string(), 2, vec![1, 8])]
     );
-    let mut target = d65_studio::launcher::create_editable("BIG", "65").unwrap();
+    let mut target = mega65_disklab::launcher::create_editable("BIG", "65").unwrap();
     for (n, k, d) in import_files(&dir.path().join("src.d81")).unwrap() {
         target.put(&n, k, &d, false).unwrap();
     }

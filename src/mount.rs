@@ -128,7 +128,7 @@ impl Dav {
         let href = format!("{}{}", self.base, encoded(name));
         let res = if dir { "<d:collection/>" } else { "" };
         let lock=self.locks.get(name).map(|(t,_)|format!("<d:activelock><d:locktype><d:write/></d:locktype><d:lockscope><d:exclusive/></d:lockscope><d:depth>0</d:depth><d:timeout>Second-600</d:timeout><d:locktoken><d:href>{t}</d:href></d:locktoken></d:activelock>")).unwrap_or_default();
-        format!("<d:response><d:href>{}</d:href><d:propstat><d:prop><d:displayname>{}</d:displayname><d:resourcetype>{res}</d:resourcetype><d:getcontentlength>{size}</d:getcontentlength><d:getcontenttype>application/octet-stream</d:getcontenttype><d:getlastmodified>{modified}</d:getlastmodified><d:supportedlock><d:lockentry><d:lockscope><d:exclusive/></d:lockscope><d:locktype><d:write/></d:locktype></d:lockentry></d:supportedlock><d:lockdiscovery>{lock}</d:lockdiscovery></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>",xml(&href),xml(if dir{"D65 Studio"}else{name}))
+        format!("<d:response><d:href>{}</d:href><d:propstat><d:prop><d:displayname>{}</d:displayname><d:resourcetype>{res}</d:resourcetype><d:getcontentlength>{size}</d:getcontentlength><d:getcontenttype>application/octet-stream</d:getcontenttype><d:getlastmodified>{modified}</d:getlastmodified><d:supportedlock><d:lockentry><d:lockscope><d:exclusive/></d:lockscope><d:locktype><d:write/></d:locktype></d:lockentry></d:supportedlock><d:lockdiscovery>{lock}</d:lockdiscovery></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>",xml(&href),xml(if dir{"MEGA65 DiskLab"}else{name}))
     }
     fn serve(&mut self, mut req: Request) {
         if std::env::var_os("D65_DAV_TRACE").is_some() {
@@ -420,7 +420,7 @@ pub fn available() -> Result<()> {
         Err("The built-in macOS WebDAV filesystem is unavailable.".into())
     }
 }
-/// A fresh, empty mount point made by D65 Studio, so mounting works like a
+/// A fresh, empty mount point made by MEGA65 DiskLab, so mounting works like a
 /// disk image: no folder to choose. mount_webdav needs an existing directory.
 #[cfg(target_os = "macos")]
 pub fn new_mountpoint(label: &str) -> Result<std::path::PathBuf> {
@@ -434,7 +434,7 @@ pub fn new_mountpoint(label: &str) -> Result<std::path::PathBuf> {
             }
         })
         .collect();
-    let p = std::env::temp_dir().join("D65 Studio").join(format!(
+    let p = std::env::temp_dir().join("MEGA65 DiskLab").join(format!(
         "{} {}",
         name.trim(),
         &uuid::Uuid::new_v4().simple().to_string()[..8]
@@ -445,7 +445,7 @@ pub fn new_mountpoint(label: &str) -> Result<std::path::PathBuf> {
 /// Remove a mount point made by `new_mountpoint` once the volume is gone.
 #[cfg(target_os = "macos")]
 pub fn remove_mountpoint(p: &Path) {
-    if p.starts_with(std::env::temp_dir().join("D65 Studio")) {
+    if p.starts_with(std::env::temp_dir().join("MEGA65 DiskLab")) {
         let _ = std::fs::remove_dir(p);
     }
 }
@@ -465,7 +465,7 @@ pub fn start(store: Shared, mountpoint: &Path, readonly: bool) -> Result<JoinHan
     let bridge = bridge(store, readonly)?;
     Ok(std::thread::spawn(move || {
         let mut cmd = std::process::Command::new("/sbin/mount_webdav");
-        cmd.arg("-S").arg("-v").arg("D65 Studio");
+        cmd.arg("-S").arg("-v").arg("MEGA65 DiskLab");
         if readonly {
             cmd.arg("-o").arg("rdonly");
         }

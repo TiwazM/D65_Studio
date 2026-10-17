@@ -25,8 +25,9 @@ impl Store {
                 path.extension().unwrap_or_default().to_string_lossy()
             )))
             .map_err(|e| e.to_string())?;
-        lock.try_lock_exclusive()
-            .map_err(|_| "This image is already open in another D65 Studio process.".to_string())?;
+        lock.try_lock_exclusive().map_err(|_| {
+            "This image is already open in another MEGA65 DiskLab process.".to_string()
+        })?;
         let saved = fs::read(&path).map_err(|e| e.to_string())?;
         let disk = Disk::parse(saved.clone())?;
         Ok(Self {
@@ -52,7 +53,7 @@ impl Store {
         let current = fs::read(&self.path).map_err(|e| e.to_string())?;
         if current != self.saved {
             return Err(
-                "Image changed outside D65 Studio. Close and reopen it before editing.".into(),
+                "Image changed outside MEGA65 DiskLab. Close and reopen it before editing.".into(),
             );
         }
         let mut next = self.disk.clone();

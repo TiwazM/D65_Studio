@@ -1,5 +1,5 @@
 //! Build original test programs supplied by path into a LOAD-hook fixture.
-use d65_studio::{
+use mega65_disklab::{
     disk::{Disk, Format},
     launcher,
 };

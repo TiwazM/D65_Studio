@@ -10,11 +10,11 @@ try {
     }
     cargo build --locked --release --target x86_64-pc-windows-msvc
     if ($LASTEXITCODE -ne 0) { throw 'Windows release build failed' }
-    $releaseName = 'D65-Studio-0.3.1-Windows-x64-r2'
+    $releaseName = 'MEGA65-DiskLab-0.3.1-Windows-x64-r2'
     $releasePath = Join-Path $OutputDirectory $releaseName
     if (Test-Path -LiteralPath $releasePath) { throw "Output already exists: $releasePath. Choose a fresh output directory." }
     New-Item -ItemType Directory -Path $releasePath -Force | Out-Null
-    Copy-Item -LiteralPath 'target/x86_64-pc-windows-msvc/release/d65-studio.exe' -Destination $releasePath
+    Copy-Item -LiteralPath 'target/x86_64-pc-windows-msvc/release/mega65-disklab.exe' -Destination $releasePath
     foreach ($file in @('WINDOWS.txt', 'README.md', 'FORMAT.md', 'LICENSE')) { Copy-Item -LiteralPath $file -Destination $releasePath }
     New-Item -ItemType Directory -Path (Join-Path $releasePath 'launcher'), (Join-Path $releasePath 'Samples'), (Join-Path $releasePath 'verification') | Out-Null
     foreach ($file in @('Resident-driver.txt', 'LOAD-compatibility.txt')) { Copy-Item -LiteralPath (Join-Path 'launcher' $file) -Destination (Join-Path $releasePath 'launcher') }
@@ -52,8 +52,8 @@ try {
         }
     }
     $inventory | Set-Content -LiteralPath (Join-Path $licenseRoot 'INDEX.txt') -Encoding UTF8
-    $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $releasePath 'd65-studio.exe')).Hash.ToLowerInvariant()
-    "$hash  d65-studio.exe" | Set-Content -LiteralPath (Join-Path $releasePath 'SHA256SUMS.txt') -Encoding ASCII
+    $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $releasePath 'mega65-disklab.exe')).Hash.ToLowerInvariant()
+    "$hash  mega65-disklab.exe" | Set-Content -LiteralPath (Join-Path $releasePath 'SHA256SUMS.txt') -Encoding ASCII
     Get-ChildItem -LiteralPath $releasePath -Recurse -File | Where-Object { $_.LastWriteTime.Year -lt 1980 } | ForEach-Object { $_.LastWriteTime = [datetime]'1980-01-01' }
     Compress-Archive -LiteralPath $releasePath -DestinationPath (Join-Path $OutputDirectory "$releaseName.zip") -CompressionLevel Optimal
     Write-Output (Join-Path $OutputDirectory "$releaseName.zip")

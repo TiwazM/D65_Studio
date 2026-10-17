@@ -284,7 +284,7 @@ fn compatibility(disk: &Disk) -> Result<bool> {
     Ok(disk.bytes[disk.offset(40, 0)? + 60] == 1)
 }
 
-/// The same files laid out again by this version of D65 Studio, with a
+/// The same files laid out again by this version of MEGA65 DiskLab, with a
 /// freshly generated START.
 fn regenerate(disk: &Disk) -> Result<Disk> {
     pack(
@@ -305,7 +305,7 @@ pub fn update_start(disk: &mut Disk) -> Result<()> {
     Ok(())
 }
 
-/// True when START differs from what this version of D65 Studio generates,
+/// True when START differs from what this version of MEGA65 DiskLab generates,
 /// for example after a reader fix.
 pub fn start_outdated(disk: &Disk) -> Result<bool> {
     let fresh = regenerate(disk)?;
@@ -472,7 +472,7 @@ fn make_start(menu: &[(String, usize)], catalog: &[u8], compatibility: bool) -> 
     line(
         &mut basic,
         30,
-        &token("PRINT\"D65 STUDIO - RESIDENT READER\""),
+        &token("PRINT\"MEGA65 DISKLAB - RESIDENT READER\""),
     );
     line(
         &mut basic,

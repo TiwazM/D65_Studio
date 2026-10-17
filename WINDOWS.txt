@@ -1,4 +1,4 @@
-D65 Studio 0.3.1 — Windows x64 preview, revision 2
+MEGA65 DiskLab 0.3.1 — Windows x64 preview, revision 2
 15 October 2026
 
 REVISION 2
@@ -12,7 +12,7 @@ untouched; the actual FATs and file chains still determine whether export is saf
 The MEGA65 disk format and loader remain 0.3.1. This is a Windows build revision.
 
 START
-Extract the whole ZIP to a writable folder, then double-click d65-studio.exe.
+Extract the whole ZIP to a writable folder, then double-click mega65-disklab.exe.
 Choose New disk or Open image. Samples contains original diagnostic images.
 No Rust, Python, browser, downloaded helper, Visual C++ redistributable, or
 third-party filesystem driver is needed. The executable uses built-in Windows
@@ -41,7 +41,7 @@ folders, resource forks and persistent per-file timestamps are not supported.
 WebClient is required for Explorer mounting. Windows may start an enabled manual
 service on demand. If WebClient is absent, disabled, inaccessible, or blocked by
 policy, the app explains the limitation. Ask your administrator about built-in
-WebClient availability; D65 Studio never changes service configuration, registry
+WebClient availability; MEGA65 DiskLab never changes service configuration, registry
 authentication policy, firewall settings or installs a driver. Import/extract
 and image editing continue to work without WebClient. Microsoft has deprecated
 WebClient, so its availability is not guaranteed in future Windows editions.

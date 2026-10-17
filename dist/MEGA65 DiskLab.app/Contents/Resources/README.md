@@ -1,8 +1,8 @@
-# D65 Studio
+# MEGA65 DiskLab
 
 **A cross-platform disk-image workbench for the MEGA65.**
 
-D65 Studio is a native application written in Rust for creating, opening, inspecting and editing Commodore D81 and MEGA65 D65 disk images. It also includes an **experimental D65 compilation builder and resident MEGA65 file reader** that can launch programs from storage beyond the area supported by the standard ROM.
+MEGA65 DiskLab is a native application written in Rust for creating, opening, inspecting and editing Commodore D81 and MEGA65 D65 disk images. It also includes an **experimental D65 compilation builder and resident MEGA65 file reader** that can launch programs from storage beyond the area supported by the standard ROM.
 
 The project began with a simple question: *Why is it so difficult to create and fill a D65 image on a computer?* It has since grown into an experiment in larger disk-image storage and compatibility with existing MEGA65 software.
 
@@ -24,7 +24,7 @@ The project began with a simple question: *Why is it so difficult to create and 
 
 ## Quick start
 
-1. Run D65 Studio on Windows or macOS.
+1. Run MEGA65 DiskLab on Windows or macOS.
 2. Choose **File › New D65…** (or New D81…) or **File › Open Disk Image…** to work with a standard D81/D65 image. Everything else lives in the File, Edit, Disk and View menus; edits are saved as you make them.
 3. Use the file list to add, inspect, extract or rename files. Standard-image changes are saved automatically; a backup is made before the first edit of a session.
 4. For a larger compilation, choose **File › Merge D81s…**, select the source images and enable **Include START launcher**.
@@ -40,17 +40,17 @@ Select a program from the menu.
 To build a large disk from scratch instead, choose **New disk**, keep **D65** selected and tick **Large D65 with START resident reader**. The new image holds only `START`; add PRG, SEQ and USR files with **Add files…**. Every change repacks the whole image, regenerates the `START` menu (BASIC programs at `$2001`, up to 99) and keeps a backup of the original beside it. The same is available from the command line:
 
 ```sh
-d65-studio create d65big BIG.d65 "MY BIG DISK"
-d65-studio add BIG.d65 GAME.prg GAME
+mega65-disklab create d65big BIG.d65 "MY BIG DISK"
+mega65-disklab add BIG.d65 GAME.prg GAME
 ```
 
-Compilations built with **Merge D81s…** can be edited the same way: adding, renaming or deleting a file repacks the image and rebuilds `START`. They stay read-only when browsed through Explorer/Finder. When a newer D65 Studio ships a changed resident reader, the sidebar says the image's `START` is older than the app; **Update START** (or `d65-studio update-start IMAGE`) replaces `START` and the catalogue while leaving every file byte for byte as it was, so there is no need to rebuild or re-export a whole disk for a reader fix. A backup of the original is kept beside the image.
+Compilations built with **Merge D81s…** can be edited the same way: adding, renaming or deleting a file repacks the image and rebuilds `START`. They stay read-only when browsed through Explorer/Finder. When a newer MEGA65 DiskLab ships a changed resident reader, the sidebar says the image's `START` is older than the app; **Update START** (or `mega65-disklab update-start IMAGE`) replaces `START` and the catalogue while leaving every file byte for byte as it was, so there is no need to rebuild or re-export a whole disk for a reader fix. A backup of the original is kept beside the image.
 
 ## How the experimental loader works
 
 The MEGA65 D65 image container is **5,570,560 bytes** (85 tracks × 256 logical sectors), but the standard D81-compatible filesystem only allocates 40 sectors per track, and ROM **920413** does not ordinarily read files in the higher sectors used by the experimental compilation. The F011 floppy-controller emulation in core 0.97.2 is a further limit: for D65 images it clamps physical sectors to 0–63 and tracks to 1–84 (`sdcardio.vhdl`), so track/sector reads can never reach more than about 2.7 MB of the image.
 
-D65 Studio addresses this with a small `START` program and a custom resident reader that bypasses the F011 path. Hyppo only mounts a D65 whose FAT clusters are contiguous and publishes the image's first SD sector at `$D68C-$D68F`, so the reader computes each 512-byte image sector's SD address, reads it with the SD controller (`$D680-$D684`) and copies the wanted 256-byte half from the sector buffer at `$FFD6E00` by DMA. Every logical sector on tracks 1–85 is therefore reachable. The reader keeps a small entry routine in the documented utility-memory region and uses reserved Attic RAM for its catalogue and read buffers.
+MEGA65 DiskLab addresses this with a small `START` program and a custom resident reader that bypasses the F011 path. Hyppo only mounts a D65 whose FAT clusters are contiguous and publishes the image's first SD sector at `$D68C-$D68F`, so the reader computes each 512-byte image sector's SD address, reads it with the SD controller (`$D680-$D684`) and copies the wanted 256-byte half from the sector buffer at `$FFD6E00` by DMA. Every logical sector on tracks 1–85 is therefore reachable. The reader keeps a small entry routine in the documented utility-memory region and uses reserved Attic RAM for its catalogue and read buffers.
 
 | Current property | Status |
 | --- | --- |
@@ -100,15 +100,15 @@ These are observed results, not a blanket claim that every D65 image, SD card, R
 **File › Send to MEGA65** uploads the open image through the MEGA65 itself, over the USB JTAG adapter's serial monitor or over Ethernet, using a copy of `m65rs` (MEGA65 Studio / mega65-jtag-rs) or `mega65_ftp` (mega65-tools, bundled with M65Connect) found on this computer. The MEGA65 writes the file to its own SD card in one contiguous run, so no card is unmounted or opened raw on the computer and no administrator prompt appears. The cluster chain is read back afterwards and the transfer fails loudly if the file is not contiguous. On 17 October 2026 a full-size image sent this way over JTAG landed in one run, mounted, and ran its last menu entry from the high sectors. The dialog can also ask the Hypervisor to mount the image as drive 8. The MEGA65 must be at the READY prompt; the transfer helper replaces whatever program is in its memory. The same from the command line:
 
 ```sh
-d65-studio send GAME.d65 GAME.D65 --mount
-d65-studio send GAME.d65 GAME.D65 --ethernet
+mega65-disklab send GAME.d65 GAME.D65 --mount
+mega65-disklab send GAME.d65 GAME.D65 --ethernet
 ```
 
 `--serial PORT`, `--ethernet IPV6` and `--tool PATH` pick the port, address and program explicitly. **File › Preferences…** stores the paths of `m65rs` and `mega65_ftp` when they are not found automatically (PATH, MEGA65 Studio, M65Connect, or the `D65_M65RS` / `D65_MEGA65_FTP` variables). When both tools are present the image is written with `mega65_ftp`, which allocates one run, and the cluster chain is read back with `m65rs`; `m65rs` on its own takes free clusters one at a time and may fragment the file, in which case the transfer deletes it again and says so. The direct SD-card export below remains available when no MEGA65 is connected.
 
 ## SD-card export: caution
 
-D65 Studio has experimental tools for writing an image as a **contiguous FAT32 file**. These are different from ordinary file copying. Their low-level operation may temporarily unmount the card and request administrator privileges.
+MEGA65 DiskLab has experimental tools for writing an image as a **contiguous FAT32 file**. These are different from ordinary file copying. Their low-level operation may temporarily unmount the card and request administrator privileges.
 
 **Use a spare, backed-up SD card for testing.** Never disconnect the card while a raw export is in progress. The implementation performs validation and keeps recovery records, but a power loss or unexpected driver behaviour can still damage the filesystem.
 
@@ -137,7 +137,7 @@ Contributions, testing and corrections are very welcome — particularly from de
 
 Useful areas include **fuller D65 capacity**, compatibility with more programs and ROM versions, handling of secondary files and custom loaders, Windows/macOS SD-card robustness, and improved documentation.
 
-For reports, please include the D65 Studio version, operating system, MEGA65 core and ROM versions, exact reproduction steps and any error text. A disposable test image is preferable to one containing personal files.
+For reports, please include the MEGA65 DiskLab version, operating system, MEGA65 core and ROM versions, exact reproduction steps and any error text. A disposable test image is preferable to one containing personal files.
 
 ## Credits and transparency
 

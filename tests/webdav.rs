@@ -1,5 +1,5 @@
 #![cfg(any(target_os = "macos", windows))]
-use d65_studio::{
+use mega65_disklab::{
     disk::{Disk, Format},
     mount::bridge,
     store::Store,

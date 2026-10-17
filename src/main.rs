@@ -1,10 +1,10 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
-use d65_studio::{
+use eframe::egui::{self, Color32, RichText};
+use mega65_disklab::{
     disk::{Disk, Entry, Format, Result},
     store::{atomic_write, Store},
     transfer::{self, Link, Tool},
 };
-use eframe::egui::{self, Color32, RichText};
 use std::{
     fs,
     future::Future,
@@ -47,7 +47,13 @@ fn recent_file() -> PathBuf {
     } else {
         home().join(".config")
     };
-    base.join("D65 Studio").join("recent.txt")
+    let dir = base.join("MEGA65 DiskLab");
+    // Settings written while the app was called D65 Studio move along.
+    let old = base.join("D65 Studio");
+    if !dir.exists() && old.is_dir() {
+        let _ = fs::rename(&old, &dir);
+    }
+    dir.join("recent.txt")
 }
 /// User settings next to the recent list: `m65rs=PATH` and `mega65_ftp=PATH`.
 fn settings_file() -> PathBuf {
@@ -143,7 +149,7 @@ struct Studio {
     new_text: bool,
     readonly: bool,
     mountpoint: Option<PathBuf>,
-    sd_task: Option<std::thread::JoinHandle<Result<d65_studio::sd_export::ExportReport>>>,
+    sd_task: Option<std::thread::JoinHandle<Result<mega65_disklab::sd_export::ExportReport>>>,
     sd_result: Option<String>,
     sd_progress: Arc<Mutex<String>>,
     sd_started: Option<std::time::Instant>,
@@ -251,12 +257,12 @@ impl Studio {
             for e in &entries {
                 disk.chain(e)?;
             }
-            if d65_studio::launcher::is_editable(&disk) {
+            if mega65_disklab::launcher::is_editable(&disk) {
                 let (used, total) = disk
                     .resident_space()
                     .ok_or("Resident image has overlapping or invalid file chains.")?;
-                let start = if d65_studio::launcher::start_outdated(&disk)? {
-                    "START is older than this version of D65 Studio."
+                let start = if mega65_disklab::launcher::start_outdated(&disk)? {
+                    "START is older than this version of MEGA65 DiskLab."
                 } else {
                     "START is current."
                 };
@@ -307,7 +313,7 @@ impl Studio {
         self.send_ethernet = ethernet;
         if let Some(s) = self.store.as_ref() {
             let s = s.lock().unwrap();
-            self.send_name = d65_studio::sd_export::suggested_name(&s.path, s.disk.format);
+            self.send_name = mega65_disklab::sd_export::suggested_name(&s.path, s.disk.format);
         }
         self.send_open = true;
     }
@@ -409,7 +415,7 @@ impl Studio {
             }
             Pick::Create(d) => match self.create_image(&first, d) {
                 Ok(s) => {
-                    let big = d65_studio::launcher::is_editable(&s.disk);
+                    let big = mega65_disklab::launcher::is_editable(&s.disk);
                     self.remember(&s.path);
                     self.store = Some(Arc::new(Mutex::new(s)));
                     self.selected = None;
@@ -434,7 +440,7 @@ impl Studio {
         if path.exists() {
             let open = self.store.as_ref().map(|s| s.lock().unwrap().path.clone());
             if path.canonicalize().ok() == open {
-                return Err("That image is open in D65 Studio. Choose another name.".into());
+                return Err("That image is open in MEGA65 DiskLab. Choose another name.".into());
             }
             fs::remove_file(path).map_err(|e| e.to_string())?;
         }
@@ -450,7 +456,7 @@ impl Studio {
             return false;
         };
         if self.start_check.as_ref().map(|(b, _)| b) != Some(&bytes) {
-            let stale = d65_studio::launcher::start_outdated(disk).unwrap_or(false);
+            let stale = mega65_disklab::launcher::start_outdated(disk).unwrap_or(false);
             self.start_check = Some((bytes, stale));
         }
         self.start_check.as_ref().unwrap().1
@@ -470,7 +476,7 @@ impl Studio {
     fn load(&mut self, p: PathBuf) {
         match Store::open(&p) {
             Ok(s) => {
-                let big = d65_studio::launcher::is_editable(&s.disk);
+                let big = mega65_disklab::launcher::is_editable(&s.disk);
                 let warning = s.disk.validate_writable().err().filter(|_| !big);
                 self.readonly = warning.is_some() || big;
                 self.remember(&s.path);
@@ -510,7 +516,7 @@ impl Studio {
         let r = (|| {
             let mut files = Vec::new();
             for p in paths {
-                files.extend(d65_studio::disk::import_files(&p)?);
+                files.extend(mega65_disklab::disk::import_files(&p)?);
             }
             self.store
                 .as_ref()
@@ -587,7 +593,7 @@ impl Studio {
             let s = self.store.as_ref().unwrap().lock().unwrap();
             (s.disk.clone(), s.path.clone())
         };
-        let name = d65_studio::sd_export::suggested_name(&source, disk.format);
+        let name = mega65_disklab::sd_export::suggested_name(&source, disk.format);
         self.ask(
             Pick::Sd(disk, source),
             one(rfd::AsyncFileDialog::new()
@@ -621,12 +627,12 @@ impl Studio {
         self.sd_task = Some(std::thread::spawn(move || {
             #[cfg(windows)]
             {
-                d65_studio::direct_sd::export_with_progress(&disk, &destination, |message| {
+                mega65_disklab::direct_sd::export_with_progress(&disk, &destination, |message| {
                     *progress.lock().unwrap() = message;
                 })
             }
             #[cfg(target_os = "macos")]
-            d65_studio::direct_sd::export(&disk, &destination)
+            mega65_disklab::direct_sd::export(&disk, &destination)
         }));
     }
     fn merge(&mut self) {
@@ -652,7 +658,7 @@ impl Studio {
                 .collect();
             let sources = sources?;
             let disk = if self.launch_build {
-                d65_studio::launcher::build_with_compat(&sources, self.load_compatibility)?
+                mega65_disklab::launcher::build_with_compat(&sources, self.load_compatibility)?
             } else {
                 Disk::merge_d81(&sources)?
             };
@@ -687,9 +693,9 @@ impl Studio {
         #[cfg(windows)]
         {
             let result = (|| {
-                d65_studio::mount::available()?;
-                let p = d65_studio::mount::free_drive()?;
-                let h = d65_studio::mount::start(
+                mega65_disklab::mount::available()?;
+                let p = mega65_disklab::mount::free_drive()?;
+                let h = mega65_disklab::mount::start(
                     self.store.as_ref().unwrap().clone(),
                     &p,
                     self.readonly,
@@ -708,12 +714,12 @@ impl Studio {
         }
         #[cfg(target_os = "macos")]
         {
-            if let Err(e) = d65_studio::mount::available() {
+            if let Err(e) = mega65_disklab::mount::available() {
                 self.report(Err(e), "");
                 return;
             }
             let label = self.store.as_ref().unwrap().lock().unwrap().disk.label();
-            match d65_studio::mount::new_mountpoint(&label) {
+            match mega65_disklab::mount::new_mountpoint(&label) {
                 Ok(p) => self.mount_at(p),
                 Err(e) => self.report(Err(e), ""),
             }
@@ -723,14 +729,15 @@ impl Studio {
     #[allow(unused_variables)]
     fn mount_at(&mut self, p: PathBuf) {
         #[cfg(target_os = "macos")]
-        match d65_studio::mount::start(self.store.as_ref().unwrap().clone(), &p, self.readonly) {
+        match mega65_disklab::mount::start(self.store.as_ref().unwrap().clone(), &p, self.readonly)
+        {
             Ok(h) => {
                 self.mount_thread = Some(h);
                 self.mountpoint = Some(p);
-                self.report(Ok(()),"Mounting. The D65 Studio volume opens in Finder; eject it before editing here.")
+                self.report(Ok(()),"Mounting. The MEGA65 DiskLab volume opens in Finder; eject it before editing here.")
             }
             Err(e) => {
-                d65_studio::mount::remove_mountpoint(&p);
+                mega65_disklab::mount::remove_mountpoint(&p);
                 self.report(Err(e), "")
             }
         }
@@ -811,7 +818,8 @@ impl eframe::App for Studio {
                 .unwrap_or_else(|_| Err("SD export worker stopped unexpectedly.".into()))
             {
                 Ok(report) => {
-                    self.error = !matches!(report.layout, d65_studio::sd_export::Layout::Verified);
+                    self.error =
+                        !matches!(report.layout, mega65_disklab::sd_export::Layout::Verified);
                     self.status = report.message();
                 }
                 Err(error) => self.report(Err(error), ""),
@@ -854,7 +862,7 @@ impl eframe::App for Studio {
                 .unwrap_or_else(|_| Err("Mount worker stopped unexpectedly.".into()));
             #[cfg(target_os = "macos")]
             if let Some(p) = &self.mountpoint {
-                d65_studio::mount::remove_mountpoint(p);
+                mega65_disklab::mount::remove_mountpoint(p);
             }
             self.mountpoint = None;
             self.report(r, "file manager volume ejected. Image saved.");
@@ -866,7 +874,7 @@ impl eframe::App for Studio {
         if ctx.input(|i| i.viewport().close_requested()) && mounted {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.report(
-                Err("Eject the file manager volume before closing D65 Studio.".into()),
+                Err("Eject the file manager volume before closing MEGA65 DiskLab.".into()),
                 "",
             );
         }
@@ -877,7 +885,7 @@ impl eframe::App for Studio {
         let (has_disk, big, writable_ok) = match &snapshot {
             Some((disk, _, _)) => (
                 true,
-                d65_studio::launcher::is_editable(disk),
+                mega65_disklab::launcher::is_editable(disk),
                 disk.validate_writable().is_ok(),
             ),
             None => (false, false, false),
@@ -983,7 +991,7 @@ impl eframe::App for Studio {
                         if ui.add_enabled(has_pick, egui::Button::new("Extract Selected File…")).clicked() { self.export(); ui.close_menu(); }
                         ui.separator();
                         if ui.add_enabled(can_edit && big, egui::Button::new("Update START")).on_hover_text("Replaces START, its reader and catalogue with this version's. Files are unchanged.").clicked() {
-                            let r = self.store.as_ref().unwrap().lock().unwrap().change(|d| d65_studio::launcher::update_start(d));
+                            let r = self.store.as_ref().unwrap().lock().unwrap().change(|d| mega65_disklab::launcher::update_start(d));
                             self.report(r, "START replaced with the current reader and menu. Files are unchanged.");
                             ui.close_menu();
                         }
@@ -995,7 +1003,7 @@ impl eframe::App for Studio {
                         if ui.add_enabled(has_disk && !mounted && !modal, egui::Button::new(if cfg!(windows) { "Mount in Explorer" } else { "Mount in Finder" })).clicked() { self.start_mount(); ui.close_menu(); }
                         if ui.add_enabled(mounted, egui::Button::new("Eject")).clicked() {
                             #[cfg(any(target_os = "macos", windows))]
-                            { let r = d65_studio::mount::unmount(self.mountpoint.as_ref().unwrap()); self.report(r, "Eject requested."); }
+                            { let r = mega65_disklab::mount::unmount(self.mountpoint.as_ref().unwrap()); self.report(r, "Eject requested."); }
                             ui.close_menu();
                         }
                     });
@@ -1010,7 +1018,7 @@ impl eframe::App for Studio {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("▣").size(32.0).color(TEAL));
                     ui.vertical(|ui| {
-                        ui.label(RichText::new("D65 STUDIO").size(25.0).strong());
+                        ui.label(RichText::new("MEGA65 DISKLAB").size(25.0).strong());
                         ui.label(
                             RichText::new("A disk workbench for your MEGA65").color(Color32::GRAY),
                         );
@@ -1042,9 +1050,9 @@ impl eframe::App for Studio {
                     ui.label(format!("{:.0} KB available when rebuilding",(total-used) as f32*254.0/1000.0));
                     ui.label("Includes START. Add, rename or delete files here; START is rebuilt each time.");
                     ui.add_space(6.0);
-                    ui.label(RichText::new(if start_stale { "START is older than this version of D65 Studio." } else { "START is current for this version of D65 Studio." }).small().color(if start_stale { Color32::from_rgb(215,184,117) } else { Color32::GRAY }));
+                    ui.label(RichText::new(if start_stale { "START is older than this version of MEGA65 DiskLab." } else { "START is current for this version of MEGA65 DiskLab." }).small().color(if start_stale { Color32::from_rgb(215,184,117) } else { Color32::GRAY }));
                     if start_stale && ui.add_enabled(can_edit, egui::Button::new("Update START")).clicked() {
-                        let r = self.store.as_ref().unwrap().lock().unwrap().change(|d| d65_studio::launcher::update_start(d));
+                        let r = self.store.as_ref().unwrap().lock().unwrap().change(|d| mega65_disklab::launcher::update_start(d));
                         self.report(r, "START replaced with the current reader and menu. Files are unchanged.");
                     }
                 } else { ui.label(RichText::new("READ-ONLY INSPECTION").color(TEAL));ui.label("Free space is not available for this layout."); }
@@ -1052,7 +1060,7 @@ impl eframe::App for Studio {
                 ui.separator();ui.label(RichText::new(if cfg!(windows) { "EXPLORER DRIVE" } else { "FINDER VOLUME" }).small().color(Color32::GRAY));
                 if mounted{
                     ui.label("Mounted — editing in file manager");
-                    if ui.button("Eject volume").clicked(){#[cfg(any(target_os="macos", windows))] {let r=d65_studio::mount::unmount(self.mountpoint.as_ref().unwrap());self.report(r,"Eject requested.");}}
+                    if ui.button("Eject volume").clicked(){#[cfg(any(target_os="macos", windows))] {let r=mega65_disklab::mount::unmount(self.mountpoint.as_ref().unwrap());self.report(r,"Eject requested.");}}
                     if ui.button(if cfg!(windows) { "Show in Explorer" } else { "Show in Finder" }).clicked(){#[cfg(any(target_os="macos", windows))] {let _=std::process::Command::new(if cfg!(windows) { "explorer.exe" } else { "open" }).arg(if cfg!(windows) { PathBuf::from(format!("{}\\", self.mountpoint.as_ref().unwrap().display())) } else { self.mountpoint.as_ref().unwrap().clone() }).spawn();}}
                 }else{
                     if writable.is_err() { self.readonly=true; } ui.add_enabled(writable.is_ok(),egui::Checkbox::new(&mut self.readonly,"Mount read-only"));
@@ -1279,7 +1287,7 @@ impl eframe::App for Studio {
                     ui.horizontal(|ui| {
                         if ui.button("Create…").clicked() {
                             let disk = if big {
-                                d65_studio::launcher::create_editable(&self.label, &self.id)
+                                mega65_disklab::launcher::create_editable(&self.label, &self.id)
                             } else {
                                 Disk::create(self.format, &self.label, &self.id)
                             };
@@ -1304,7 +1312,7 @@ impl eframe::App for Studio {
             if let Some(s) = self.store.as_ref().map(|s| s.lock().unwrap()) {
                 let d = &s.disk;
                 let entries = d.entries().unwrap_or_default();
-                let resident = d65_studio::launcher::is_editable(d);
+                let resident = mega65_disklab::launcher::is_editable(d);
                 let mut lines = vec![
                     format!("Label: {}    ID: {}", d.label(), d.disk_id()),
                     format!(
@@ -1521,29 +1529,29 @@ impl eframe::App for Studio {
 }
 fn cli(args: &[String]) -> Result<()> {
     match args.first().map(String::as_str){
-        Some("create") if args.len()==4&&args[1].eq_ignore_ascii_case("d65big")=>{Store::create(Path::new(&args[2]),d65_studio::launcher::create_editable(&args[3],"65")?)?;println!("Large D65 with START resident reader created. Use add to put files on it; START is rebuilt each time.");},
+        Some("create") if args.len()==4&&args[1].eq_ignore_ascii_case("d65big")=>{Store::create(Path::new(&args[2]),mega65_disklab::launcher::create_editable(&args[3],"65")?)?;println!("Large D65 with START resident reader created. Use add to put files on it; START is rebuilt each time.");},
         Some("send") if args.len()>=3=>{
             let image=fs::canonicalize(&args[1]).map_err(|e|e.to_string())?;Disk::parse(fs::read(&image).map_err(|e|e.to_string())?)?;
             let name=args[2].to_ascii_uppercase();let (mut link,mut mount,mut tool)=(Link::Serial(None),false,None);let mut i=3;
             while i<args.len(){let next=args.get(i+1).filter(|a|!a.starts_with("--")).cloned();match args[i].as_str(){"--mount"=>mount=true,"--ethernet"=>{if next.is_some(){i+=1}link=Link::Ethernet(next)},"--serial"=>{if next.is_some(){i+=1}link=Link::Serial(next)},"--tool"=>{tool=next.ok_or("--tool needs a path")?.into();i+=1},o=>return Err(format!("Unknown option {o}"))}i+=1}
             let tool=match tool{Some(p)=>{let p=PathBuf::from(p);Tool{kind:if p.file_name().unwrap_or_default().to_string_lossy().contains("ftp"){transfer::Kind::Mega65Ftp}else{transfer::Kind::M65rs},path:p}},None=>transfer::preferred(&transfer::find_tools_with(&tool_overrides(&load_settings())),matches!(link,Link::Ethernet(_))).cloned().ok_or("No transfer tool found. Install MEGA65 Studio (m65rs) or M65Connect (mega65_ftp), or pass --tool PATH.")?};
             let tools=transfer::find_tools_with(&tool_overrides(&load_settings()));let steps=transfer::plan(&tool,&tools,&link,&image,&name,mount)?;let tail=transfer::run(&steps,|l|println!("{l}"))?;println!("Sent {name} to the MEGA65's SD card with {}.\n{tail}",tool.name());},
-        Some("update-start") if args.len()==2=>{let mut s=Store::open(Path::new(&args[1]))?;if !d65_studio::launcher::start_outdated(&s.disk)?{println!("START is already current.");}else{s.change(|d|d65_studio::launcher::update_start(d))?;println!("START replaced with the current reader and menu. Files are unchanged; a backup was kept beside the image.");}},
+        Some("update-start") if args.len()==2=>{let mut s=Store::open(Path::new(&args[1]))?;if !mega65_disklab::launcher::start_outdated(&s.disk)?{println!("START is already current.");}else{s.change(|d|mega65_disklab::launcher::update_start(d))?;println!("START replaced with the current reader and menu. Files are unchanged; a backup was kept beside the image.");}},
         Some("create") if args.len()==4=>{let format=if args[1].eq_ignore_ascii_case("d81"){Format::D81}else if args[1].eq_ignore_ascii_case("d65"){Format::D65}else{return Err("Format must be d65 or d81".into())};Store::create(Path::new(&args[2]),Disk::create(format,&args[3],"65")?)?;},
-        Some("list") if args.len()==2=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;println!("{} [{}] {} bytes",d.label(),d.disk_id(),d.bytes.len());for e in d.entries()?{println!("{:5} {:16} {}",e.blocks,e.name,e.type_name())}match d.resident_space().filter(|_|d65_studio::launcher::is_editable(&d)){Some((used,total))=>{println!("{} blocks free (resident reader, START included)",total-used);println!("START {}",if d65_studio::launcher::start_outdated(&d)?{"is older than this version of D65 Studio: run update-start"}else{"is current"});}None=>{println!("{} blocks free",d.free_blocks());d.validate_writable()?;}}},
+        Some("list") if args.len()==2=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;println!("{} [{}] {} bytes",d.label(),d.disk_id(),d.bytes.len());for e in d.entries()?{println!("{:5} {:16} {}",e.blocks,e.name,e.type_name())}match d.resident_space().filter(|_|mega65_disklab::launcher::is_editable(&d)){Some((used,total))=>{println!("{} blocks free (resident reader, START included)",total-used);println!("START {}",if mega65_disklab::launcher::start_outdated(&d)?{"is older than this version of MEGA65 DiskLab: run update-start"}else{"is current"});}None=>{println!("{} blocks free",d.free_blocks());d.validate_writable()?;}}},
         Some("add") if args.len()==4=>{let mut s=Store::open(Path::new(&args[1]))?;let data=fs::read(&args[2]).map_err(|e|e.to_string())?;let kind=match Path::new(&args[2]).extension().and_then(|x|x.to_str()).unwrap_or("").to_ascii_lowercase().as_str(){"seq"=>1,"usr"=>3,_=>2};s.change(|d|d.put(&args[3],kind,&data,false))?;},
-        Some("launch" | "launch-compat") if args.len()>=3=>{let sources:Result<Vec<_>>=args[2..].iter().map(|p|Disk::parse(fs::read(p).map_err(|e|e.to_string())?)).collect();Store::create(Path::new(&args[1]),d65_studio::launcher::build_with_compat(&sources?, args[0]=="launch-compat")?)?;println!("Resident launch disk created. RUN \"START\" from drive 8. About 5.4 MB minus START; 55,041-byte program limit. Direct-SD reader: hardware validation pending.");},
+        Some("launch" | "launch-compat") if args.len()>=3=>{let sources:Result<Vec<_>>=args[2..].iter().map(|p|Disk::parse(fs::read(p).map_err(|e|e.to_string())?)).collect();Store::create(Path::new(&args[1]),mega65_disklab::launcher::build_with_compat(&sources?, args[0]=="launch-compat")?)?;println!("Resident launch disk created. RUN \"START\" from drive 8. About 5.4 MB minus START; 55,041-byte program limit. Direct-SD reader: hardware validation pending.");},
         Some("merge") if args.len()>=4=>{let sources:Result<Vec<_>>=args[2..].iter().map(|p|Disk::parse(fs::read(p).map_err(|e|e.to_string())?)).collect();Store::create(Path::new(&args[1]),Disk::merge_d81(&sources?)?)?;println!("Experimental merge verified offline. Read-only; ROM 920413 cannot load later banks. A modified ROM or custom loader is required.");},
         Some("convert") if args.len()==4=>{let format=match args[3].as_str(){"d81"=>Format::D81,"d65"=>Format::D65,_=>return Err("Format must be d65 or d81".into())};let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?.convert(format)?;Store::create(Path::new(&args[2]),d)?;},
         #[cfg(any(target_os="macos", windows))]
-        Some("direct-sd-helper")=>{println!("{}",d65_studio::direct_sd::helper(&args[1..])?);},
+        Some("direct-sd-helper")=>{println!("{}",mega65_disklab::direct_sd::helper(&args[1..])?);},
         #[cfg(any(target_os="macos", windows))]
-        Some("export-sd") if args.len()==3=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;let r=d65_studio::direct_sd::export(&d,Path::new(&args[2]))?;println!("{}",r.message());},
+        Some("export-sd") if args.len()==3=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;let r=mega65_disklab::direct_sd::export(&d,Path::new(&args[2]))?;println!("{}",r.message());},
         #[cfg(any(target_os="macos", windows))]
-        Some("serve") if args.len()==2=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let b=d65_studio::mount::bridge(s,false)?;println!("{}",b.url);loop{std::thread::sleep(std::time::Duration::from_secs(1));}},
+        Some("serve") if args.len()==2=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let b=mega65_disklab::mount::bridge(s,false)?;println!("{}",b.url);loop{std::thread::sleep(std::time::Duration::from_secs(1));}},
         #[cfg(any(target_os="macos", windows))]
-        Some("mount") if args.len()==3||args.len()==4=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let ro=args.get(3).map(String::as_str)==Some("--read-only");d65_studio::mount::start(s,Path::new(&args[2]),ro)?.join().map_err(|_|"Mount worker panicked")??;},
-        _=>return Err("Usage: d65-studio [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | update-start IMAGE | send IMAGE NAME.D65 [--serial [PORT] | --ethernet [IPV6]] [--mount] [--tool PATH] | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
+        Some("mount") if args.len()==3||args.len()==4=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let ro=args.get(3).map(String::as_str)==Some("--read-only");mega65_disklab::mount::start(s,Path::new(&args[2]),ro)?.join().map_err(|_|"Mount worker panicked")??;},
+        _=>return Err("Usage: mega65-disklab [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | update-start IMAGE | send IMAGE NAME.D65 [--serial [PORT] | --ethernet [IPV6]] [--mount] [--tool PATH] | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
     }
     Ok(())
 }
@@ -1559,7 +1567,7 @@ fn main() -> eframe::Result<()> {
         if let Err(e) = cli(&args) {
             #[cfg(windows)]
             if args.first().map(String::as_str) == Some("direct-sd-helper") {
-                d65_studio::windows::show_error(&e);
+                mega65_disklab::windows::show_error(&e);
             }
             eprintln!("{e}");
             std::process::exit(1)
@@ -1571,7 +1579,7 @@ fn main() -> eframe::Result<()> {
         app.load(p.into());
     }
     eframe::run_native(
-        "D65 Studio",
+        "MEGA65 DiskLab",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 // No minimum size: on macOS a minimum is applied twice after the

@@ -1,4 +1,4 @@
-use d65_studio::disk::{Disk, Format};
+use mega65_disklab::disk::{Disk, Format};
 fn d81(label: &str) -> Disk {
     Disk::create(Format::D81, label, "65").unwrap()
 }

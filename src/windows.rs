@@ -167,7 +167,7 @@ pub fn show_error(message: &str) {
         MessageBoxW(
             std::ptr::null_mut(),
             wide(message).as_ptr(),
-            wide("D65 Studio — SD export").as_ptr(),
+            wide("MEGA65 DiskLab — SD export").as_ptr(),
             MB_OK | MB_ICONERROR,
         );
     }

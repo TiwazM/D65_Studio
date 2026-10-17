@@ -485,7 +485,7 @@ impl Disk {
     pub fn validate_writable(&self) -> Result<()> {
         let header = self.offset(40, 0)?;
         if self.bytes[header + 48..header + 56] == *b"D65RES01" {
-            return Err("Resident-reader compilation: edit it in D65 Studio, which rebuilds START on every change.".into());
+            return Err("Resident-reader compilation: edit it in MEGA65 DiskLab, which rebuilds START on every change.".into());
         }
         let mut occupied = HashSet::from([(40, 0), (40, 1), (40, 2)]);
         let id = self.offset(40, 0)? + 22;

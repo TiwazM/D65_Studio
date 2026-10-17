@@ -1,4 +1,4 @@
-D65 Studio 0.3.1 resident reader, direct SD sector reads
+MEGA65 DiskLab 0.3.1 resident reader, direct SD sector reads
 
 See Resident-driver.txt for the complete ABI, memory contract and test limits.
 The desktop app embeds reader.bin. End users need no assembler or added tools.

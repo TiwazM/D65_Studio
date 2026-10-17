@@ -1,5 +1,5 @@
 //! Developer-only reproducible fixtures; no ROM or external game data bundled.
-use d65_studio::{
+use mega65_disklab::{
     disk::{Disk, Format},
     launcher,
 };

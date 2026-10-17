@@ -17,7 +17,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-const REMOVABLE_ACCESS: &str = "macOS blocked D65 Studio from the SD card. Open System Settings › Privacy & Security › Files & Folders and turn on Removable Volumes for D65 Studio (or add D65 Studio to Full Disk Access), then export again.";
+const REMOVABLE_ACCESS: &str = "macOS blocked MEGA65 DiskLab from the SD card. Open System Settings › Privacy & Security › Files & Folders and turn on Removable Volumes for MEGA65 DiskLab (or add MEGA65 DiskLab to Full Disk Access), then export again.";
 
 fn command(program: &str, args: &[&str]) -> Result<Vec<u8>> {
     let out = Command::new(program)
@@ -195,7 +195,7 @@ pub fn export(disk: &Disk, destination: &Path) -> Result<ExportReport> {
     .map_err(|e| e.to_string())?;
     // macOS checks the Removable Volumes permission of the app that started the
     // privileged helper before it may open the card's raw device. Listing the
-    // card here, from D65 Studio itself, makes macOS ask for that permission.
+    // card here, from MEGA65 DiskLab itself, makes macOS ask for that permission.
     fs::read_dir(&folder).map_err(|e| {
         if e.kind() == std::io::ErrorKind::PermissionDenied {
             REMOVABLE_ACCESS.to_string()

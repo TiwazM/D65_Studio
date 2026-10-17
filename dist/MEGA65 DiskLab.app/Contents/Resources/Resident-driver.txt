@@ -1,4 +1,4 @@
-D65 Studio 0.3.1 (direct-SD reader) — resident read-only file service, ABI 1 (experimental)
+MEGA65 DiskLab 0.3.1 (direct-SD reader) — resident read-only file service, ABI 1 (experimental)
 
 What it does
 ------------

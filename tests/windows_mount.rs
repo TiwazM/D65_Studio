@@ -1,5 +1,5 @@
 #![cfg(windows)]
-use d65_studio::{
+use mega65_disklab::{
     disk::{Disk, Format},
     mount,
     store::Store,

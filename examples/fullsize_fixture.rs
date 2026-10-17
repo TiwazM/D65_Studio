@@ -1,7 +1,7 @@
 //! Developer-only full-capacity fixture: 95 menu programs plus MESSAGE, filling
 //! the D65 to its 5.46 MB payload limit so the last entries sit on tracks 81-85
 //! and logical sectors above 127. No ROM or third-party data is bundled.
-use d65_studio::{
+use mega65_disklab::{
     disk::{Disk, Format},
     launcher,
 };

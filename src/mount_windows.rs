@@ -31,7 +31,7 @@ impl Drop for Service {
 fn service_error(code: u32) -> String {
     match code {
         ERROR_SERVICE_DOES_NOT_EXIST => "Windows WebClient is not installed or is unavailable in this Windows edition. Explorer mounting requires the built-in WebDAV redirector. Use the app's import/extract controls instead; no third-party driver is required for editing.".into(),
-        ERROR_SERVICE_DISABLED => "Windows WebClient is disabled. Explorer mounting is unavailable until your administrator enables the built-in WebClient service. D65 Studio does not change service or security settings. Import/extract still works.".into(),
+        ERROR_SERVICE_DISABLED => "Windows WebClient is disabled. Explorer mounting is unavailable until your administrator enables the built-in WebClient service. MEGA65 DiskLab does not change service or security settings. Import/extract still works.".into(),
         _ => format!("Cannot inspect Windows WebClient: {}. Explorer mounting requires the built-in WebClient service. Import/extract remains available.", std::io::Error::from_raw_os_error(code as i32)),
     }
 }
@@ -163,7 +163,7 @@ pub fn start(store: Shared, mountpoint: &Path, readonly: bool) -> Result<JoinHan
             )
         };
         if code != NO_ERROR {
-            return Err(format!("Explorer mount failed: {} (code {code}). Windows WebClient must be available and running, and local WebDAV must be permitted by Windows policy. Ask your administrator to start WebClient if it is stopped. D65 Studio does not install drivers or change authentication/registry policy. Use import/extract in the app instead.", std::io::Error::from_raw_os_error(code as i32)));
+            return Err(format!("Explorer mount failed: {} (code {code}). Windows WebClient must be available and running, and local WebDAV must be permitted by Windows policy. Ask your administrator to start WebClient if it is stopped. MEGA65 DiskLab does not install drivers or change authentication/registry policy. Use import/extract in the app instead.", std::io::Error::from_raw_os_error(code as i32)));
         }
         owned()
             .lock()

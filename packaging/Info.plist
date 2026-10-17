@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>D65 Studio</string>
+	<string>MEGA65 DiskLab</string>
 	<key>CFBundleExecutable</key>
-	<string>d65-studio</string>
+	<string>mega65-disklab</string>
 	<key>CFBundleIdentifier</key>
-	<string>org.mega65.community.d65studio</string>
+	<string>org.mega65.community.disklab</string>
 	<key>CFBundleName</key>
-	<string>D65 Studio</string>
+	<string>MEGA65 DiskLab</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

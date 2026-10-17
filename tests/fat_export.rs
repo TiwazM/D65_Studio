@@ -1,4 +1,4 @@
-use d65_studio::{
+use mega65_disklab::{
     disk::{Disk, Format, Result},
     fat_export::{self, Device, Sector},
 };

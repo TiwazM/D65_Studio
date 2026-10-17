@@ -1,4 +1,4 @@
-D65 Studio 0.3.1 — optional LOAD compatibility (experimental)
+MEGA65 DiskLab 0.3.1 — optional LOAD compatibility (experimental)
 
 Use it
 ------
