@@ -12,7 +12,7 @@ The project began with a simple question: *Why is it so difficult to create and 
 
 - Native **Windows x64** and **macOS** builds; no Python or Rust installation needed to run the application.
 - Create and open **D81 and D65** images; inspect directories and file contents.
-- Add, extract, rename and delete **PRG, SEQ and USR** files on *standard editable images*.
+- Add, extract, rename and delete **PRG, SEQ and USR** files; any host file can be added, and adding a D81 or D65 copies all of its files in.
 - Convert supported D65/D81 container layouts, refusing conversions that would lose extended data.
 - Browse mounted images in **Windows Explorer or macOS Finder** using a local WebDAV bridge; no separate filesystem driver required.
 - Merge programs and supporting files from multiple D81s into a **read-only D65 compilation** with a `START` launcher.
@@ -25,9 +25,9 @@ The project began with a simple question: *Why is it so difficult to create and 
 ## Quick start
 
 1. Run D65 Studio on Windows or macOS.
-2. Choose **New disk** or **Open image** to work with a standard D81/D65 image.
+2. Choose **File › New D65…** (or New D81…) or **File › Open Disk Image…** to work with a standard D81/D65 image. Everything else lives in the File, Edit, Disk and View menus; edits are saved as you make them.
 3. Use the file list to add, inspect, extract or rename files. Standard-image changes are saved automatically; a backup is made before the first edit of a session.
-4. For a larger compilation, choose **Merge D81s…**, select the source images and enable **Include START launcher**.
+4. For a larger compilation, choose **File › Merge D81s…**, select the source images and enable **Include START launcher**.
 5. Optionally enable **Experimental LOAD compatibility (ROM 920413)** for programs using supported standard loading calls.
 6. Save the compilation as `.d65`, copy it to an SD card, mount it as drive 8 on the MEGA65, and enter:
 
@@ -94,6 +94,17 @@ Tests have been performed on a **physical MEGA65 running core 0.97.2 and ROM 920
 - The direct SD-card writers and their recovery mechanisms need further real-card testing before they should be considered reliable.
 
 These are observed results, not a blanket claim that every D65 image, SD card, ROM or application will work.
+
+## Sending an image to the MEGA65
+
+**File › Send to MEGA65** uploads the open image through the MEGA65 itself, over the USB JTAG adapter's serial monitor or over Ethernet, using a copy of `m65rs` (MEGA65 Studio / mega65-jtag-rs) or `mega65_ftp` (mega65-tools, bundled with M65Connect) found on this computer. The MEGA65 writes the file to its own SD card in one contiguous run, so no card is unmounted or opened raw on the computer and no administrator prompt appears. With `m65rs` the cluster chain is read back afterwards and the transfer fails loudly if the file is not contiguous. The dialog can also ask the Hypervisor to mount the image as drive 8. The MEGA65 must be at the READY prompt; the transfer helper replaces whatever program is in its memory. The same from the command line:
+
+```sh
+d65-studio send GAME.d65 GAME.D65 --mount
+d65-studio send GAME.d65 GAME.D65 --ethernet
+```
+
+`--serial PORT`, `--ethernet IPV6` and `--tool PATH` pick the port, address and program explicitly; `D65_M65RS` and `D65_MEGA65_FTP` can point at the programs. The direct SD-card export below remains available when no MEGA65 is connected.
 
 ## SD-card export: caution
 

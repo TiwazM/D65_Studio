@@ -2,6 +2,7 @@
 use d65_studio::{
     disk::{Disk, Entry, Format, Result},
     store::{atomic_write, Store},
+    transfer::{self, Link, Tool},
 };
 use eframe::egui::{self, Color32, RichText};
 use std::{
@@ -26,6 +27,34 @@ enum Pick {
     MergeSources,
     MergeSave(Disk, bool, bool),
     Create(Disk),
+    Replace(Entry),
+}
+fn home() -> PathBuf {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_default()
+}
+/// Recently opened images, one path per line, in the user's application data.
+fn recent_file() -> PathBuf {
+    let base = if cfg!(target_os = "macos") {
+        home().join("Library/Application Support")
+    } else if cfg!(windows) {
+        std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(home)
+    } else {
+        home().join(".config")
+    };
+    base.join("D65 Studio").join("recent.txt")
+}
+fn load_recent() -> Vec<PathBuf> {
+    fs::read_to_string(recent_file())
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(PathBuf::from)
+        .collect()
 }
 fn one(f: impl Future<Output = Option<rfd::FileHandle>> + 'static) -> Dialog {
     Box::pin(async move {
@@ -60,6 +89,23 @@ struct Studio {
     big: bool,
     /// START bytes last checked against a freshly generated START, and the verdict.
     start_check: Option<(Vec<u8>, bool)>,
+    recent: Vec<PathBuf>,
+    show_sidebar: bool,
+    show_details: bool,
+    info_open: bool,
+    rename_open: bool,
+    send_open: bool,
+    send_tools: Vec<Tool>,
+    send_tool: Option<Tool>,
+    send_ethernet: bool,
+    send_device: String,
+    send_address: String,
+    send_name: String,
+    send_mount: bool,
+    send_task: Option<std::thread::JoinHandle<Result<String>>>,
+    send_progress: Arc<Mutex<Vec<String>>>,
+    send_started: Option<std::time::Instant>,
+    send_result: Option<String>,
     dialog: Option<(Pick, Dialog)>,
     rename: String,
     edit: String,
@@ -91,6 +137,23 @@ impl Default for Studio {
             format: Format::D65,
             big: false,
             start_check: None,
+            recent: load_recent(),
+            show_sidebar: true,
+            show_details: true,
+            info_open: false,
+            rename_open: false,
+            send_open: false,
+            send_tools: Vec::new(),
+            send_tool: None,
+            send_ethernet: false,
+            send_device: String::new(),
+            send_address: String::new(),
+            send_name: String::new(),
+            send_mount: true,
+            send_task: None,
+            send_progress: Arc::new(Mutex::new(Vec::new())),
+            send_started: None,
+            send_result: None,
             dialog: None,
             rename: String::new(),
             edit: String::new(),
@@ -109,6 +172,145 @@ impl Default for Studio {
     }
 }
 impl Studio {
+    fn remember(&mut self, p: &Path) {
+        self.recent.retain(|r| r != p);
+        self.recent.insert(0, p.to_path_buf());
+        self.recent.truncate(8);
+        let f = recent_file();
+        if let Some(dir) = f.parent() {
+            let _ = fs::create_dir_all(dir);
+        }
+        let _ = fs::write(
+            f,
+            self.recent
+                .iter()
+                .map(|p| format!("{}\n", p.display()))
+                .collect::<String>(),
+        );
+    }
+    fn open_dialog(&mut self) {
+        self.ask(
+            Pick::Open,
+            one(rfd::AsyncFileDialog::new()
+                .add_filter("MEGA65 images", &["d65", "d81"])
+                .pick_file()),
+        );
+    }
+    fn close_disk(&mut self) {
+        self.store = None;
+        self.selected = None;
+        self.start_check = None;
+        self.report(Ok(()), "Image closed.");
+    }
+    fn refresh(&mut self) {
+        if let Some(p) = self.store.as_ref().map(|s| s.lock().unwrap().path.clone()) {
+            self.store = None;
+            self.start_check = None;
+            self.load(p);
+        }
+    }
+    /// Re-run every structural check and say what the image is.
+    fn validate(&mut self) {
+        let Some(disk) = self.store.as_ref().map(|s| s.lock().unwrap().disk.clone()) else {
+            return;
+        };
+        let r = (|| {
+            let entries = disk.entries()?;
+            for e in &entries {
+                disk.chain(e)?;
+            }
+            if d65_studio::launcher::is_editable(&disk) {
+                let (used, total) = disk
+                    .resident_space()
+                    .ok_or("Resident image has overlapping or invalid file chains.")?;
+                let start = if d65_studio::launcher::start_outdated(&disk)? {
+                    "START is older than this version of D65 Studio."
+                } else {
+                    "START is current."
+                };
+                Ok(format!(
+                    "Valid resident image: {} files, {} of {} blocks used. {start}",
+                    entries.len(),
+                    used,
+                    total
+                ))
+            } else {
+                disk.validate_writable()?;
+                Ok(format!(
+                    "Valid {} image: {} files, {} blocks free, BAM consistent.",
+                    disk.format.ext().to_uppercase(),
+                    entries.len(),
+                    disk.free_blocks()
+                ))
+            }
+        })();
+        match r {
+            Ok(m) => self.report(Ok(()), &m),
+            Err(e) => self.report(Err(e), ""),
+        }
+    }
+    fn open_send(&mut self, ethernet: bool) {
+        self.send_tools = transfer::find_tools();
+        self.send_tool = self
+            .send_tools
+            .iter()
+            .find(|t| !ethernet || t.supports_ethernet())
+            .cloned();
+        self.send_ethernet = ethernet;
+        if let Some(s) = self.store.as_ref() {
+            let s = s.lock().unwrap();
+            self.send_name = d65_studio::sd_export::suggested_name(&s.path, s.disk.format);
+        }
+        self.send_open = true;
+    }
+    fn start_send(&mut self) {
+        let Some(tool) = self.send_tool.clone() else {
+            return;
+        };
+        let (bytes, path) = {
+            let s = self.store.as_ref().unwrap().lock().unwrap();
+            (s.disk.bytes.clone(), s.path.clone())
+        };
+        if fs::read(&path).ok().as_deref() != Some(bytes.as_slice()) {
+            self.report(
+                Err("Image changed on disk. Reopen it before sending.".into()),
+                "",
+            );
+            return;
+        }
+        let blank = |s: &String| s.trim().is_empty();
+        let link = if self.send_ethernet {
+            Link::Ethernet(
+                (!blank(&self.send_address)).then(|| self.send_address.trim().to_string()),
+            )
+        } else {
+            Link::Serial((!blank(&self.send_device)).then(|| self.send_device.clone()))
+        };
+        let name = self.send_name.trim().to_ascii_uppercase();
+        let steps = match transfer::plan(&tool, &link, &path, &name, self.send_mount) {
+            Ok(s) => s,
+            Err(e) => {
+                self.report(Err(e), "");
+                return;
+            }
+        };
+        self.send_open = false;
+        self.send_result = None;
+        self.send_started = Some(std::time::Instant::now());
+        self.send_progress.lock().unwrap().clear();
+        let progress = self.send_progress.clone();
+        self.status = format!("Sending {name} to the MEGA65 with {}…", tool.name());
+        self.error = false;
+        self.send_task = Some(std::thread::spawn(move || {
+            transfer::run(&steps, |line| {
+                let mut p = progress.lock().unwrap();
+                p.push(line.to_string());
+                if p.len() > 12 {
+                    p.remove(0);
+                }
+            })
+        }));
+    }
     fn ask(&mut self, pick: Pick, dialog: Dialog) {
         if self.dialog.is_none() {
             self.dialog = Some((pick, dialog));
@@ -129,9 +331,23 @@ impl Studio {
             Pick::Sd(..) => {}
             Pick::MergeSources => self.merge_paths(paths),
             Pick::MergeSave(disk, launch, compat) => self.merge_save(disk, launch, compat, first),
-            Pick::Create(d) => match Store::create(&first, d) {
+            Pick::Replace(e) => {
+                let r = fs::read(&first)
+                    .map_err(|e| e.to_string())
+                    .and_then(|data| {
+                        self.store
+                            .as_ref()
+                            .ok_or("No image")?
+                            .lock()
+                            .unwrap()
+                            .change(|d| d.put(&e.name, e.kind, &data, true))
+                    });
+                self.report(r, "File replaced.");
+            }
+            Pick::Create(d) => match self.create_image(&first, d) {
                 Ok(s) => {
                     let big = d65_studio::launcher::is_editable(&s.disk);
+                    self.remember(&s.path);
                     self.store = Some(Arc::new(Mutex::new(s)));
                     self.selected = None;
                     self.readonly = big;
@@ -148,6 +364,18 @@ impl Studio {
                 Err(e) => self.report(Err(e), ""),
             },
         }
+    }
+    /// The system save dialog has already asked whether to replace an existing
+    /// file, so honour that here; the open image itself is never replaced.
+    fn create_image(&self, path: &Path, disk: Disk) -> Result<Store> {
+        if path.exists() {
+            let open = self.store.as_ref().map(|s| s.lock().unwrap().path.clone());
+            if path.canonicalize().ok() == open {
+                return Err("That image is open in D65 Studio. Choose another name.".into());
+            }
+            fs::remove_file(path).map_err(|e| e.to_string())?;
+        }
+        Store::create(path, disk)
     }
     /// Whether a resident image's START is older than this app would generate.
     /// Regenerating is a full repack, so the verdict is cached per START bytes.
@@ -182,6 +410,7 @@ impl Studio {
                 let big = d65_studio::launcher::is_editable(&s.disk);
                 let warning = s.disk.validate_writable().err().filter(|_| !big);
                 self.readonly = warning.is_some() || big;
+                self.remember(&s.path);
                 self.store = Some(Arc::new(Mutex::new(s)));
                 self.selected = None;
                 self.status = warning.unwrap_or_else(|| {
@@ -209,8 +438,7 @@ impl Studio {
             Pick::Import,
             many(
                 rfd::AsyncFileDialog::new()
-                    .set_title("Add PRG, SEQ or USR files")
-                    .add_filter("Commodore files", &["prg", "seq", "usr"])
+                    .set_title("Add files to the disk")
                     .pick_files(),
             ),
         );
@@ -219,23 +447,7 @@ impl Studio {
         let r = (|| {
             let mut files = Vec::new();
             for p in paths {
-                let ext = p
-                    .extension()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_ascii_lowercase();
-                let kind = match ext.as_str() {
-                    "prg" => 2,
-                    "seq" => 1,
-                    "usr" => 3,
-                    _ => return Err("Use .prg, .seq or .usr files.".into()),
-                };
-                let name = p
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                files.push((name, kind, fs::read(p).map_err(|e| e.to_string())?));
+                files.extend(d65_studio::disk::import_files(&p)?);
             }
             self.store
                 .as_ref()
@@ -244,7 +456,8 @@ impl Studio {
                 .unwrap()
                 .change(|d| {
                     for (name, kind, data) in &files {
-                        d.put(name, *kind, data, false)?
+                        d.put(name, *kind, data, false)
+                            .map_err(|e| format!("{name}: {e}"))?
                     }
                     Ok(())
                 })
@@ -399,6 +612,7 @@ impl Studio {
     }
     fn merge_save(&mut self, disk: Disk, launch: bool, compat: bool, path: PathBuf) {
         let result = Store::create(&path, disk).map(|store| {
+            self.remember(&store.path);
             self.store = Some(Arc::new(Mutex::new(store)));
             self.selected = None;
             self.readonly = true;
@@ -472,6 +686,59 @@ impl eframe::App for Studio {
                 ctx.request_repaint_after(std::time::Duration::from_millis(100));
             }
         }
+        if self
+            .send_task
+            .as_ref()
+            .is_some_and(|task| task.is_finished())
+        {
+            let r = self
+                .send_task
+                .take()
+                .unwrap()
+                .join()
+                .unwrap_or_else(|_| Err("Transfer worker stopped unexpectedly.".into()));
+            match r {
+                Ok(tail) => {
+                    self.report(Ok(()), "Image sent to the MEGA65's SD card.");
+                    self.send_result =
+                        Some(format!("Image sent to the MEGA65's SD card.\n\n{tail}"));
+                }
+                Err(e) => {
+                    self.report(Err(e.clone()), "");
+                    self.send_result = Some(e);
+                }
+            }
+        }
+        if self.send_task.is_some() {
+            if ctx.input(|i| i.viewport().close_requested()) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.heading("Sending to MEGA65");
+                ui.spinner();
+                if let Some(start) = self.send_started {
+                    ui.label(format!("Elapsed: {} seconds", start.elapsed().as_secs()));
+                }
+                ui.label("The MEGA65 is writing the image to its SD card. Keep it switched on and connected.");
+                ui.add_space(8.0);
+                for line in self.send_progress.lock().unwrap().iter() {
+                    ui.monospace(line);
+                }
+            });
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            return;
+        }
+        if let Some(message) = self.send_result.clone() {
+            egui::Window::new("Send to MEGA65 result")
+                .collapsible(false)
+                .default_width(560.0)
+                .show(ctx, |ui| {
+                    ui.monospace(message);
+                    if ui.button("OK").clicked() {
+                        self.send_result = None;
+                    }
+                });
+        }
         if self.sd_task.as_ref().is_some_and(|task| task.is_finished()) {
             match self
                 .sd_task
@@ -540,13 +807,142 @@ impl eframe::App for Studio {
                 "",
             );
         }
+        let snapshot = self.store.as_ref().map(|s| {
+            let s = s.lock().unwrap();
+            (s.disk.clone(), s.path.clone(), s.backup.clone())
+        });
+        let (has_disk, big, writable_ok) = match &snapshot {
+            Some((disk, _, _)) => (
+                true,
+                d65_studio::launcher::is_editable(disk),
+                disk.validate_writable().is_ok(),
+            ),
+            None => (false, false, false),
+        };
+        let can_edit = (writable_ok || big) && !mounted;
+        let picked = self.picked();
+        let has_pick = picked.is_some();
+        let modal = self.new_open
+            || self.merge_open
+            || self.editor_open
+            || self.delete_open
+            || self.info_open
+            || self.rename_open
+            || self.send_open
+            || self.dialog.is_some();
+        let cmd = egui::Modifiers::COMMAND;
+        let key = |k| ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(cmd, k)));
+        let shift_key = |k| {
+            ctx.input_mut(|i| {
+                i.consume_shortcut(&egui::KeyboardShortcut::new(
+                    cmd | egui::Modifiers::SHIFT,
+                    k,
+                ))
+            })
+        };
+        if !modal && !mounted && key(egui::Key::N) {
+            self.format = Format::D65;
+            self.new_open = true;
+        }
+        if !modal && !mounted && key(egui::Key::O) {
+            self.open_dialog();
+        }
+        if !modal && !mounted && has_disk && key(egui::Key::W) {
+            self.close_disk();
+        }
+        if !modal && has_disk && key(egui::Key::I) {
+            self.info_open = true;
+        }
+        if !modal && !mounted && has_disk && key(egui::Key::R) {
+            self.refresh();
+        }
+        if !modal && can_edit && shift_key(egui::Key::A) {
+            self.import();
+        }
         egui::TopBottomPanel::top("header")
             .frame(
                 egui::Frame::new()
                     .fill(Color32::from_rgb(19, 28, 35))
-                    .inner_margin(22.0),
+                    .inner_margin(egui::Margin::symmetric(22, 12)),
             )
             .show(ctx, |ui| {
+                egui::menu::bar(ui, |ui| {
+                    ui.menu_button("File", |ui| {
+                        if ui.add_enabled(!mounted, egui::Button::new("New D65…").shortcut_text("⌘N")).clicked() { self.format = Format::D65; self.new_open = true; ui.close_menu(); }
+                        if ui.add_enabled(!mounted, egui::Button::new("New D81…")).clicked() { self.format = Format::D81; self.big = false; self.new_open = true; ui.close_menu(); }
+                        if ui.add_enabled(!mounted, egui::Button::new("Open Disk Image…").shortcut_text("⌘O")).clicked() { self.open_dialog(); ui.close_menu(); }
+                        ui.add_enabled_ui(!mounted && !self.recent.is_empty(), |ui| {
+                            ui.menu_button("Open Recent", |ui| {
+                                for p in self.recent.clone() {
+                                    if ui.button(p.file_name().unwrap_or_default().to_string_lossy().to_string()).on_hover_text(p.display().to_string()).clicked() { self.load(p); ui.close_menu(); }
+                                }
+                                ui.separator();
+                                if ui.button("Clear Menu").clicked() { self.recent.clear(); let _ = fs::remove_file(recent_file()); ui.close_menu(); }
+                            });
+                        });
+                        if ui.add_enabled(!mounted, egui::Button::new("Merge D81s…")).clicked() { self.merge_open = true; ui.close_menu(); }
+                        ui.separator();
+                        ui.add_enabled_ui(has_disk && !mounted, |ui| {
+                            if ui.button("Save a Copy As…").on_hover_text("Edits are saved automatically; this writes a copy in the same format.").clicked() { let f = snapshot.as_ref().unwrap().0.format; self.convert(f); ui.close_menu(); }
+                            ui.menu_button("Export Disk Image", |ui| {
+                                if ui.button("As D65…").clicked() { self.convert(Format::D65); ui.close_menu(); }
+                                if ui.button("As D81…").clicked() { self.convert(Format::D81); ui.close_menu(); }
+                            });
+                            #[cfg(any(target_os = "macos", windows))]
+                            if ui.button("Export to SD Card…").on_hover_text("Writes the image straight to a card in this computer. Unmounts the card and asks for administrator access.").clicked() { self.export_sd(); ui.close_menu(); }
+                            ui.menu_button("Send to MEGA65", |ui| {
+                                if ui.button("Over USB JTAG…").clicked() { self.open_send(false); ui.close_menu(); }
+                                if ui.button("Over Ethernet…").clicked() { self.open_send(true); ui.close_menu(); }
+                            });
+                        });
+                        ui.separator();
+                        if ui.add_enabled(has_disk && !mounted, egui::Button::new("Close Disk").shortcut_text("⌘W")).clicked() { self.close_disk(); ui.close_menu(); }
+                    });
+                    ui.menu_button("Edit", |ui| {
+                        if ui.add_enabled(can_edit, egui::Button::new("Add Files…").shortcut_text("⇧⌘A")).clicked() { self.import(); ui.close_menu(); }
+                        if ui.add_enabled(can_edit, egui::Button::new("Import from Disk Image…")).on_hover_text("Copies every PRG, SEQ and USR file of a D81 or D65 into this image.").clicked() { self.ask(Pick::Import, many(rfd::AsyncFileDialog::new().set_title("Choose D81 or D65 images to copy files from").add_filter("Disk images", &["d81", "d65"]).pick_files())); ui.close_menu(); }
+                        if ui.add_enabled(can_edit, egui::Button::new("New Text File…")).clicked() { self.edit.clear(); self.rename = "README".into(); self.new_text = true; self.editor_open = true; ui.close_menu(); }
+                        ui.separator();
+                        ui.add_enabled_ui(can_edit && has_pick, |ui| {
+                            if ui.button("Rename…").clicked() { self.rename = picked.as_ref().map(|e| e.name.clone()).unwrap_or_default(); self.rename_open = true; ui.close_menu(); }
+                            if ui.button("Replace File…").on_hover_text("Keeps the name and type, takes the bytes from a file on this computer.").clicked() { let e = picked.clone().unwrap(); self.ask(Pick::Replace(e), one(rfd::AsyncFileDialog::new().set_title("Choose the new contents").pick_file())); ui.close_menu(); }
+                            if ui.button("Edit as Text…").clicked() {
+                                let e = picked.clone().unwrap();
+                                match snapshot.as_ref().unwrap().0.read(&e).map(|b| String::from_utf8(b)) {
+                                    Ok(Ok(text)) => { self.edit = text; self.new_text = false; self.editor_open = true; }
+                                    _ => self.report(Err("That file is not UTF-8/ASCII text.".into()), ""),
+                                }
+                                ui.close_menu();
+                            }
+                            if ui.button("Delete Selected File…").clicked() { self.delete_open = true; ui.close_menu(); }
+                        });
+                        if ui.add_enabled(has_pick, egui::Button::new("Extract Selected File…")).clicked() { self.export(); ui.close_menu(); }
+                        ui.separator();
+                        if ui.add_enabled(can_edit && big, egui::Button::new("Update START")).on_hover_text("Replaces START, its reader and catalogue with this version's. Files are unchanged.").clicked() {
+                            let r = self.store.as_ref().unwrap().lock().unwrap().change(|d| d65_studio::launcher::update_start(d));
+                            self.report(r, "START replaced with the current reader and menu. Files are unchanged.");
+                            ui.close_menu();
+                        }
+                    });
+                    ui.menu_button("Disk", |ui| {
+                        if ui.add_enabled(has_disk, egui::Button::new("Disk Information…").shortcut_text("⌘I")).clicked() { self.info_open = true; ui.close_menu(); }
+                        if ui.add_enabled(has_disk, egui::Button::new("Validate Image")).clicked() { self.validate(); ui.close_menu(); }
+                        ui.separator();
+                        if ui.add_enabled(has_disk && !mounted && !modal, egui::Button::new(if cfg!(windows) { "Mount in Explorer" } else { "Mount in Finder" })).clicked() { self.start_mount(); ui.close_menu(); }
+                        if ui.add_enabled(mounted, egui::Button::new("Eject")).clicked() {
+                            #[cfg(any(target_os = "macos", windows))]
+                            { let r = d65_studio::mount::unmount(self.mountpoint.as_ref().unwrap()); self.report(r, "Eject requested."); }
+                            ui.close_menu();
+                        }
+                    });
+                    ui.menu_button("View", |ui| {
+                        ui.checkbox(&mut self.show_sidebar, "Disk Information Sidebar");
+                        ui.checkbox(&mut self.show_details, "File Details");
+                        ui.separator();
+                        if ui.add_enabled(has_disk && !mounted, egui::Button::new("Refresh").shortcut_text("⌘R")).on_hover_text("Reads the image from disk again.").clicked() { self.refresh(); ui.close_menu(); }
+                    });
+                });
+                ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("▣").size(32.0).color(TEAL));
                     ui.vertical(|ui| {
@@ -554,39 +950,6 @@ impl eframe::App for Studio {
                         ui.label(
                             RichText::new("A disk workbench for your MEGA65").color(Color32::GRAY),
                         );
-                    });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add_enabled(
-                                !mounted,
-                                egui::Button::new("Open image…").min_size(egui::vec2(115.0, 36.0)),
-                            )
-                            .clicked()
-                        {
-                            self.ask(
-                                Pick::Open,
-                                one(rfd::AsyncFileDialog::new()
-                                    .add_filter("MEGA65 images", &["d65", "d81"])
-                                    .pick_file()),
-                            );
-                        }
-                        if ui
-                            .add_enabled(!mounted, egui::Button::new("Merge D81s…"))
-                            .clicked()
-                        {
-                            self.merge_open = true;
-                        }
-                        if ui
-                            .add_enabled(
-                                !mounted,
-                                egui::Button::new("+ New disk")
-                                    .fill(Color32::from_rgb(30, 90, 78))
-                                    .min_size(egui::vec2(110.0, 36.0)),
-                            )
-                            .clicked()
-                        {
-                            self.new_open = true;
-                        }
                     });
                 });
             });
@@ -599,16 +962,11 @@ impl eframe::App for Studio {
                     TEAL
                 }));
             });
-        let snapshot = self.store.as_ref().map(|s| {
-            let s = s.lock().unwrap();
-            (s.disk.clone(), s.path.clone(), s.backup.clone())
-        });
         if let Some((disk, path, backup)) = snapshot {
             let writable = disk.validate_writable();
-            let big = d65_studio::launcher::is_editable(&disk);
-            let can_edit = (writable.is_ok() || big) && !mounted;
             let start_stale = big && self.start_stale(&disk);
-            egui::SidePanel::left("disk").exact_width(248.0).frame(egui::Frame::new().fill(Color32::from_rgb(19,28,35)).inner_margin(20.0)).show(ctx,|ui|{ egui::ScrollArea::vertical().id_salt("sidebar_scroll").show(ui,|ui|{
+            if self.show_sidebar {
+                egui::SidePanel::left("disk").exact_width(248.0).frame(egui::Frame::new().fill(Color32::from_rgb(19,28,35)).inner_margin(20.0)).show(ctx,|ui|{ egui::ScrollArea::vertical().id_salt("sidebar_scroll").show(ui,|ui|{
                 ui.add_space(8.0);ui.label(RichText::new(disk.format.ext().to_uppercase()).size(44.0).color(TEAL).strong());ui.heading(disk.label());ui.label(format!("DISK ID  {}",disk.disk_id()));ui.add_space(24.0);
                 if writable.is_ok() {
                     ui.label(RichText::new("AVAILABLE DATA SPACE").small().color(Color32::GRAY));ui.label(RichText::new(format!("{} blocks",disk.free_blocks())).size(23.0));ui.add(egui::ProgressBar::new(1.0-disk.free_blocks()as f32/3160.0).fill(TEAL));ui.label(format!("{:.1} KiB free",disk.free_blocks()as f32*254.0/1024.0));
@@ -621,32 +979,25 @@ impl eframe::App for Studio {
                     ui.label("Includes START. Add, rename or delete files here; START is rebuilt each time.");
                     ui.add_space(6.0);
                     ui.label(RichText::new(if start_stale { "START is older than this version of D65 Studio." } else { "START is current for this version of D65 Studio." }).small().color(if start_stale { Color32::from_rgb(215,184,117) } else { Color32::GRAY }));
-                    if ui.add_enabled(can_edit, egui::Button::new("Update START")).clicked() {
+                    if start_stale && ui.add_enabled(can_edit, egui::Button::new("Update START")).clicked() {
                         let r = self.store.as_ref().unwrap().lock().unwrap().change(|d| d65_studio::launcher::update_start(d));
                         self.report(r, "START replaced with the current reader and menu. Files are unchanged.");
                     }
                 } else { ui.label(RichText::new("READ-ONLY INSPECTION").color(TEAL));ui.label("Free space is not available for this layout."); }
                 ui.add_space(14.0);ui.label(format!("Container: {} bytes",disk.bytes.len()));
-                if disk.format==Format::D65{ui.add_space(8.0);ui.label(RichText::new("Standard and resident images are editable. Experimental merges are read-only. Later banks require the START reader or compatible software.").color(Color32::from_rgb(215,184,117)));}
                 ui.separator();ui.label(RichText::new(if cfg!(windows) { "EXPLORER DRIVE" } else { "FINDER VOLUME" }).small().color(Color32::GRAY));
                 if mounted{
                     ui.label("Mounted — editing in file manager");
                     if ui.button("Eject volume").clicked(){#[cfg(any(target_os="macos", windows))] {let r=d65_studio::mount::unmount(self.mountpoint.as_ref().unwrap());self.report(r,"Eject requested.");}}
                     if ui.button(if cfg!(windows) { "Show in Explorer" } else { "Show in Finder" }).clicked(){#[cfg(any(target_os="macos", windows))] {let _=std::process::Command::new(if cfg!(windows) { "explorer.exe" } else { "open" }).arg(if cfg!(windows) { PathBuf::from(format!("{}\\", self.mountpoint.as_ref().unwrap().display())) } else { self.mountpoint.as_ref().unwrap().clone() }).spawn();}}
                 }else{
-                    if writable.is_err() { self.readonly=true; } ui.add_enabled(writable.is_ok(),egui::Checkbox::new(&mut self.readonly,"Mount read-only"));if ui.add_enabled(!self.new_open&&!self.editor_open&&!self.delete_open,egui::Button::new(if cfg!(windows) { "Mount in Explorer…" } else { "Mount in Finder" })).clicked(){self.start_mount()}
-                    ui.label(RichText::new(if cfg!(windows) { "Built-in Windows WebClient · no driver installation" } else { "Built-in macOS connection · no driver needed" }).small().color(TEAL));
+                    if writable.is_err() { self.readonly=true; } ui.add_enabled(writable.is_ok(),egui::Checkbox::new(&mut self.readonly,"Mount read-only"));
+                    ui.label(RichText::new(if cfg!(windows) { "Disk › Mount in Explorer · built-in WebClient" } else { "Disk › Mount in Finder · built-in macOS connection" }).small().color(TEAL));
                 }
-                ui.add_space(10.0);ui.label(RichText::new("Use .prg, .seq or .usr files with names up to 16 characters. The disk has a flat directory.").small());
-                ui.separator();if ui.add_enabled(!mounted,egui::Button::new("Export as D81…")).clicked(){self.convert(Format::D81)}if ui.add_enabled(!mounted,egui::Button::new("Export as D65…")).clicked(){self.convert(Format::D65)}
-                #[cfg(any(target_os="macos", windows))]
-                {
-                    ui.add_space(8.0);
-                    if ui.add_enabled(!mounted, egui::Button::new("Export to SD card…")).clicked() { self.export_sd(); }
-                    ui.label(RichText::new(if cfg!(windows) { "Choose an existing folder on the SD card and a new filename. Temporarily unmounts the card; administrator access is requested." } else { "Choose the card root and a new filename. Temporarily unmounts the card; administrator access is requested." }).small());
-                }
+                ui.add_space(10.0);ui.label(RichText::new("Any file can be added. .prg, .seq and .usr set the type and drop the extension; other files keep their full name (up to 16 characters) as PRG, .txt as SEQ. A .d81 or .d65 adds all of its files. The disk has a flat directory.").small());
                 ui.add_space(12.0);ui.label(RichText::new(path.display().to_string()).small().color(Color32::GRAY));if backup.is_some(){ui.label(RichText::new("Original backed up beside image").small().color(TEAL));}
             }); });
+            }
             egui::CentralPanel::default()
                 .frame(egui::Frame::new().inner_margin(24.0))
                 .show(ctx, |ui| {
@@ -658,15 +1009,6 @@ impl eframe::App for Studio {
                                 .clicked()
                             {
                                 self.import()
-                            }
-                            if ui
-                                .add_enabled(can_edit, egui::Button::new("New text file"))
-                                .clicked()
-                            {
-                                self.edit.clear();
-                                self.rename = "README".into();
-                                self.new_text = true;
-                                self.editor_open = true;
                             }
                         });
                     });
@@ -775,45 +1117,47 @@ impl eframe::App for Studio {
                                         }
                                     }
                                 }
-                                ui.add_space(10.0);
-                                ui.label(
+                                if self.show_details {
+                                    ui.add_space(10.0);
+                                    ui.label(
                                     RichText::new(
                                         "BYTE PREVIEW · first 512 bytes · no PETSCII translation",
                                     )
                                     .small()
                                     .color(Color32::GRAY),
                                 );
-                                let preview = bytes
-                                    .iter()
-                                    .take(512)
-                                    .copied()
-                                    .collect::<Vec<_>>()
-                                    .chunks(16)
-                                    .enumerate()
-                                    .map(|(i, c)| {
-                                        format!(
-                                            "{:04X}   {:48}  {}",
-                                            i * 16,
-                                            c.iter()
-                                                .map(|b| format!("{b:02X} "))
-                                                .collect::<String>(),
-                                            c.iter()
-                                                .map(|b| if (32..127).contains(b) {
-                                                    *b as char
-                                                } else {
-                                                    '.'
-                                                })
-                                                .collect::<String>()
-                                        )
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .join("\n");
-                                egui::ScrollArea::both()
-                                    .id_salt("preview")
-                                    .max_height(210.0)
-                                    .show(ui, |ui| {
-                                        ui.monospace(preview);
-                                    });
+                                    let preview = bytes
+                                        .iter()
+                                        .take(512)
+                                        .copied()
+                                        .collect::<Vec<_>>()
+                                        .chunks(16)
+                                        .enumerate()
+                                        .map(|(i, c)| {
+                                            format!(
+                                                "{:04X}   {:48}  {}",
+                                                i * 16,
+                                                c.iter()
+                                                    .map(|b| format!("{b:02X} "))
+                                                    .collect::<String>(),
+                                                c.iter()
+                                                    .map(|b| if (32..127).contains(b) {
+                                                        *b as char
+                                                    } else {
+                                                        '.'
+                                                    })
+                                                    .collect::<String>()
+                                            )
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join("\n");
+                                    egui::ScrollArea::both()
+                                        .id_salt("preview")
+                                        .max_height(210.0)
+                                        .show(ui, |ui| {
+                                            ui.monospace(preview);
+                                        });
+                                }
                             }
                             Err(err) => {
                                 ui.label(err);
@@ -825,7 +1169,7 @@ impl eframe::App for Studio {
                     }
                 });
         } else {
-            egui::CentralPanel::default().show(ctx,|ui|{ui.add_space(75.0);ui.vertical_centered(|ui|{ui.label(RichText::new("Your next disk starts here.").size(35.0).strong());ui.add_space(15.0);ui.label("Create a MEGA65 D65 image, browse its files, and take it into file manager.");ui.label("D81 images work too. Everything stays on this computer.");ui.add_space(28.0);if ui.button(RichText::new("Create a disk").size(20.0)).clicked(){self.new_open=true;}ui.add_space(38.0);ui.label(RichText::new("D65 support is based on the MEGA65 Freezer layout.\nSTART can load extra-sector programs; ordinary editing uses D81 capacity.").color(Color32::from_rgb(215,184,117)));});});
+            egui::CentralPanel::default().show(ctx,|ui|{ui.add_space(75.0);ui.vertical_centered(|ui|{ui.label(RichText::new("Your next disk starts here.").size(35.0).strong());ui.add_space(15.0);ui.label("Create a MEGA65 D65 image, browse its files, and take it into file manager.");ui.label("D81 images work too. Everything stays on this computer.");ui.add_space(28.0);if ui.button(RichText::new("Create a disk").size(20.0)).clicked(){self.new_open=true;}ui.add_space(6.0);ui.label(RichText::new("File › Open Disk Image… (⌘O) · File › Open Recent").color(Color32::GRAY));ui.add_space(38.0);ui.label(RichText::new("D65 support is based on the MEGA65 Freezer layout.\nSTART can load extra-sector programs; ordinary editing uses D81 capacity.").color(Color32::from_rgb(215,184,117)));});});
         }
         if self.merge_open {
             egui::Window::new("Experimental D81 merge").collapsible(false).resizable(false).show(ctx, |ui| {
@@ -892,6 +1236,143 @@ impl eframe::App for Studio {
                     });
                 });
         }
+        if self.info_open {
+            if let Some(s) = self.store.as_ref().map(|s| s.lock().unwrap()) {
+                let d = &s.disk;
+                let entries = d.entries().unwrap_or_default();
+                let resident = d65_studio::launcher::is_editable(d);
+                let mut lines = vec![
+                    format!("Label: {}    ID: {}", d.label(), d.disk_id()),
+                    format!(
+                        "Format: {}    Container: {} bytes",
+                        d.format.ext().to_uppercase(),
+                        d.bytes.len()
+                    ),
+                    format!("Files: {}", entries.len()),
+                    format!("Path: {}", s.path.display()),
+                ];
+                if resident {
+                    if let Some((used, total)) = d.resident_space() {
+                        lines.push(format!(
+                            "Resident reader image: {} of {} blocks used ({:.2} MB free)",
+                            used,
+                            total,
+                            (total - used) as f32 * 254.0 / 1_000_000.0
+                        ));
+                    }
+                    lines.push(format!(
+                        "Compatibility LOAD hook: {}",
+                        if d.bytes[d.offset(40, 0).unwrap() + 60] == 1 {
+                            "on"
+                        } else {
+                            "off"
+                        }
+                    ));
+                } else {
+                    lines.push(format!(
+                        "Free: {} blocks ({:.1} KiB)",
+                        d.free_blocks(),
+                        d.free_blocks() as f32 * 254.0 / 1024.0
+                    ));
+                    if let Err(e) = d.validate_writable() {
+                        lines.push(format!("Read-only: {e}"));
+                    }
+                }
+                if let Some(b) = &s.backup {
+                    lines.push(format!("Backup of the original: {}", b.display()));
+                }
+                if let Some(m) = &self.mountpoint {
+                    lines.push(format!("Mounted at: {}", m.display()));
+                }
+                drop(s);
+                egui::Window::new("Disk information")
+                    .collapsible(false)
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        for l in &lines {
+                            ui.label(l);
+                        }
+                        ui.add_space(6.0);
+                        if ui.button("Close").clicked() {
+                            self.info_open = false;
+                        }
+                    });
+            } else {
+                self.info_open = false;
+            }
+        }
+        if self.rename_open {
+            egui::Window::new("Rename file")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("New name (up to 16 characters)");
+                    let r = ui.add(egui::TextEdit::singleline(&mut self.rename).char_limit(16));
+                    ui.horizontal(|ui| {
+                        if ui.button("Rename").clicked()
+                            || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                        {
+                            if let Some(e) = self.picked() {
+                                let r = self
+                                    .store
+                                    .as_ref()
+                                    .unwrap()
+                                    .lock()
+                                    .unwrap()
+                                    .change(|d| d.rename(&e, &self.rename));
+                                self.report(r, "File renamed.");
+                            }
+                            self.rename_open = false;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.rename_open = false;
+                        }
+                    });
+                });
+        }
+        if self.send_open {
+            egui::Window::new("Send to MEGA65").collapsible(false).resizable(false).default_width(520.0).show(ctx, |ui| {
+                ui.label("The MEGA65 writes the image to its own SD card in one contiguous run, so nothing is written to a card from this computer and no administrator prompt appears.");
+                ui.label("The MEGA65 must be switched on, connected, and at the READY prompt. The transfer helper replaces whatever program is in its memory.");
+                ui.add_space(6.0);
+                if self.send_tools.is_empty() {
+                    ui.colored_label(Color32::YELLOW, "No transfer tool found. Install MEGA65 Studio (m65rs) or M65Connect (mega65_ftp), or set D65_M65RS / D65_MEGA65_FTP to the program, then reopen this window.");
+                } else {
+                    let selected = self.send_tool.as_ref().map(|t| format!("{} — {}", t.name(), t.path.display())).unwrap_or_else(|| "Choose a tool".into());
+                    egui::ComboBox::from_label("Tool").width(420.0).selected_text(selected).show_ui(ui, |ui| {
+                        for t in self.send_tools.clone() {
+                            let label = format!("{} — {}", t.name(), t.path.display());
+                            ui.selectable_value(&mut self.send_tool, Some(t), label);
+                        }
+                    });
+                }
+                let ethernet_ok = self.send_tool.as_ref().is_some_and(|t| t.supports_ethernet());
+                if !ethernet_ok { self.send_ethernet = false; }
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut self.send_ethernet, false, "USB JTAG adapter (serial)");
+                    ui.add_enabled_ui(ethernet_ok, |ui| { ui.radio_value(&mut self.send_ethernet, true, "Ethernet (mega65_ftp)"); });
+                });
+                if self.send_ethernet {
+                    ui.label("MEGA65 IPv6 address, e.g. fe80::...%en0. Leave blank to auto-discover.");
+                    ui.add(egui::TextEdit::singleline(&mut self.send_address).desired_width(420.0));
+                } else {
+                    let devices = transfer::serial_devices();
+                    let shown = if self.send_device.is_empty() { "Automatic".to_string() } else { self.send_device.clone() };
+                    egui::ComboBox::from_label("Serial port").width(420.0).selected_text(shown).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.send_device, String::new(), "Automatic");
+                        for d in devices { ui.selectable_value(&mut self.send_device, d.clone(), d); }
+                    });
+                }
+                ui.label("Filename on the card (8 characters, .D65 or .D81)");
+                ui.add(egui::TextEdit::singleline(&mut self.send_name).char_limit(12).desired_width(200.0));
+                ui.checkbox(&mut self.send_mount, "Ask the MEGA65 to mount it as drive 8 afterwards");
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(self.send_tool.is_some(), egui::Button::new("Send")).clicked() { self.start_send(); }
+                    if ui.button("Cancel").clicked() { self.send_open = false; }
+                });
+            });
+        }
         if self.delete_open {
             egui::Window::new("Delete file?").collapsible(false).show(ctx,|ui|{ui.label("Remove the selected file from this image? A backup is kept beside the image.");ui.horizontal(|ui|{if ui.button("Delete file").clicked(){if let Some(e)=self.picked(){let r=self.store.as_ref().unwrap().lock().unwrap().change(|d|d.remove(&e));self.report(r,"File deleted.");self.selected=None;}self.delete_open=false;}if ui.button("Cancel").clicked(){self.delete_open=false;}});});
         }
@@ -946,6 +1427,12 @@ impl eframe::App for Studio {
 fn cli(args: &[String]) -> Result<()> {
     match args.first().map(String::as_str){
         Some("create") if args.len()==4&&args[1].eq_ignore_ascii_case("d65big")=>{Store::create(Path::new(&args[2]),d65_studio::launcher::create_editable(&args[3],"65")?)?;println!("Large D65 with START resident reader created. Use add to put files on it; START is rebuilt each time.");},
+        Some("send") if args.len()>=3=>{
+            let image=fs::canonicalize(&args[1]).map_err(|e|e.to_string())?;Disk::parse(fs::read(&image).map_err(|e|e.to_string())?)?;
+            let name=args[2].to_ascii_uppercase();let (mut link,mut mount,mut tool)=(Link::Serial(None),false,None);let mut i=3;
+            while i<args.len(){let next=args.get(i+1).filter(|a|!a.starts_with("--")).cloned();match args[i].as_str(){"--mount"=>mount=true,"--ethernet"=>{if next.is_some(){i+=1}link=Link::Ethernet(next)},"--serial"=>{if next.is_some(){i+=1}link=Link::Serial(next)},"--tool"=>{tool=next.ok_or("--tool needs a path")?.into();i+=1},o=>return Err(format!("Unknown option {o}"))}i+=1}
+            let tool=match tool{Some(p)=>{let p=PathBuf::from(p);Tool{kind:if p.file_name().unwrap_or_default().to_string_lossy().contains("ftp"){transfer::Kind::Mega65Ftp}else{transfer::Kind::M65rs},path:p}},None=>transfer::find_tools().into_iter().find(|t|!matches!(link,Link::Ethernet(_))||t.supports_ethernet()).ok_or("No transfer tool found. Install MEGA65 Studio (m65rs) or M65Connect (mega65_ftp), or pass --tool PATH.")?};
+            let steps=transfer::plan(&tool,&link,&image,&name,mount)?;let tail=transfer::run(&steps,|l|println!("{l}"))?;println!("Sent {name} to the MEGA65's SD card with {}.\n{tail}",tool.name());},
         Some("update-start") if args.len()==2=>{let mut s=Store::open(Path::new(&args[1]))?;if !d65_studio::launcher::start_outdated(&s.disk)?{println!("START is already current.");}else{s.change(|d|d65_studio::launcher::update_start(d))?;println!("START replaced with the current reader and menu. Files are unchanged; a backup was kept beside the image.");}},
         Some("create") if args.len()==4=>{let format=if args[1].eq_ignore_ascii_case("d81"){Format::D81}else if args[1].eq_ignore_ascii_case("d65"){Format::D65}else{return Err("Format must be d65 or d81".into())};Store::create(Path::new(&args[2]),Disk::create(format,&args[3],"65")?)?;},
         Some("list") if args.len()==2=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;println!("{} [{}] {} bytes",d.label(),d.disk_id(),d.bytes.len());for e in d.entries()?{println!("{:5} {:16} {}",e.blocks,e.name,e.type_name())}match d.resident_space().filter(|_|d65_studio::launcher::is_editable(&d)){Some((used,total))=>{println!("{} blocks free (resident reader, START included)",total-used);println!("START {}",if d65_studio::launcher::start_outdated(&d)?{"is older than this version of D65 Studio: run update-start"}else{"is current"});}None=>{println!("{} blocks free",d.free_blocks());d.validate_writable()?;}}},
@@ -961,7 +1448,7 @@ fn cli(args: &[String]) -> Result<()> {
         Some("serve") if args.len()==2=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let b=d65_studio::mount::bridge(s,false)?;println!("{}",b.url);loop{std::thread::sleep(std::time::Duration::from_secs(1));}},
         #[cfg(any(target_os="macos", windows))]
         Some("mount") if args.len()==3||args.len()==4=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let ro=args.get(3).map(String::as_str)==Some("--read-only");d65_studio::mount::start(s,Path::new(&args[2]),ro)?.join().map_err(|_|"Mount worker panicked")??;},
-        _=>return Err("Usage: d65-studio [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | update-start IMAGE | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
+        _=>return Err("Usage: d65-studio [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | update-start IMAGE | send IMAGE NAME.D65 [--serial [PORT] | --ethernet [IPV6]] [--mount] [--tool PATH] | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
     }
     Ok(())
 }

@@ -208,3 +208,93 @@ fn independent_freezer_fixture() {
     let reference = include_bytes!("fixtures/freezer-reference.d65");
     assert_eq!(disk().bytes.as_slice(), reference.as_slice());
 }
+
+#[test]
+fn host_files_map_to_names_and_types() {
+    use d65_studio::disk::import_name;
+    use std::path::Path;
+    assert_eq!(
+        import_name(Path::new("/x/game.prg")).unwrap(),
+        ("GAME".into(), 2)
+    );
+    assert_eq!(
+        import_name(Path::new("notes.seq")).unwrap(),
+        ("NOTES".into(), 1)
+    );
+    assert_eq!(
+        import_name(Path::new("data.usr")).unwrap(),
+        ("DATA".into(), 3)
+    );
+    assert_eq!(
+        import_name(Path::new("SPACE.SCP")).unwrap(),
+        ("SPACE.SCP".into(), 2)
+    );
+    assert_eq!(
+        import_name(Path::new("readme.txt")).unwrap(),
+        ("README.TXT".into(), 1)
+    );
+    assert_eq!(
+        import_name(Path::new("space_commander_level_data.bin")).unwrap(),
+        ("SPACE_COMMANDER_".into(), 2)
+    );
+    assert_eq!(
+        import_name(Path::new("a:b\"c\"é.dat")).unwrap(),
+        ("A-B-C-\u{2d}.DAT".replace("\u{2d}", "-").into(), 2)
+    );
+    assert!(import_name(Path::new("game.d81")).is_err());
+    assert!(import_name(Path::new("....")).is_ok());
+}
+
+#[test]
+fn disk_images_import_all_of_their_files() {
+    use d65_studio::disk::{import_files, Disk, Format};
+    let dir = tempfile::tempdir().unwrap();
+    let mut d81 = Disk::create(Format::D81, "SRC", "65").unwrap();
+    d81.put(
+        "GAME",
+        2,
+        &[1, 32, 9, 32, 10, 0, 0x99, 0x22, 0x22, 0, 0, 0],
+        false,
+    )
+    .unwrap();
+    d81.put("LEVELS", 1, &vec![7; 70_000], false).unwrap();
+    let p = dir.path().join("src.d81");
+    std::fs::write(&p, &d81.bytes).unwrap();
+    let files = import_files(&p).unwrap();
+    assert_eq!(
+        files
+            .iter()
+            .map(|(n, k, d)| (n.as_str(), *k, d.len()))
+            .collect::<Vec<_>>(),
+        [("GAME", 2, 12), ("LEVELS", 1, 70_000)]
+    );
+    let resident = d65_studio::launcher::build(&[d81]).unwrap();
+    let p = dir.path().join("comp.d65");
+    std::fs::write(&p, &resident.bytes).unwrap();
+    assert_eq!(
+        import_files(&p)
+            .unwrap()
+            .iter()
+            .map(|(n, _, _)| n.as_str())
+            .collect::<Vec<_>>(),
+        ["GAME", "LEVELS"]
+    );
+    let empty = dir.path().join("empty.d81");
+    std::fs::write(
+        &empty,
+        Disk::create(Format::D81, "EMPTY", "65").unwrap().bytes,
+    )
+    .unwrap();
+    assert!(import_files(&empty).unwrap_err().contains("no PRG"));
+    let prg = dir.path().join("demo.prg");
+    std::fs::write(&prg, [1, 8]).unwrap();
+    assert_eq!(
+        import_files(&prg).unwrap(),
+        vec![("DEMO".to_string(), 2, vec![1, 8])]
+    );
+    let mut target = d65_studio::launcher::create_editable("BIG", "65").unwrap();
+    for (n, k, d) in import_files(&dir.path().join("src.d81")).unwrap() {
+        target.put(&n, k, &d, false).unwrap();
+    }
+    assert_eq!(target.entries().unwrap().len(), 3);
+}

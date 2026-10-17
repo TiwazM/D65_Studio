@@ -90,6 +90,86 @@ pub fn encode_name(name: &str, max: usize) -> Result<Vec<u8>> {
     }
     Ok(name.into_bytes())
 }
+/// Directory name and type for a host file. `.prg`, `.seq` and `.usr` set the
+/// type and lose their extension; `.txt` is a SEQ file; anything else keeps its
+/// whole filename as a PRG, because MEGA65 software loads data files by that
+/// name. Names are uppercased, cut to 16 characters, and characters the DOS
+/// cannot store become '-'.
+pub fn import_name(path: &std::path::Path) -> Result<(String, u8)> {
+    let ext = path
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    let whole = path
+        .file_name()
+        .ok_or("Invalid filename")?
+        .to_string_lossy()
+        .to_string();
+    let stem = path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let (raw, kind) =
+        match ext.as_str() {
+            "prg" => (stem, 2),
+            "seq" => (stem, 1),
+            "usr" => (stem, 3),
+            "txt" | "asc" | "md" => (whole.clone(), 1),
+            "d81" | "d65" | "d64" => return Err(
+                "That is a disk image. Open it with Open image, or combine D81s with Merge D81s."
+                    .into(),
+            ),
+            _ => (whole.clone(), 2),
+        };
+    let name: String = raw
+        .chars()
+        .map(|c| {
+            let c = c.to_ascii_uppercase();
+            if (' '..='_').contains(&c) && !"\"*?,:/\\%".contains(c) {
+                c
+            } else {
+                '-'
+            }
+        })
+        .take(16)
+        .collect();
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err(format!("Cannot derive a disk filename from {whole}."));
+    }
+    Ok((name, kind))
+}
+/// What a host path adds to a disk: a D81 or D65 image contributes every
+/// PRG, SEQ and USR file it holds (a compilation's own START excepted); any
+/// other file is one entry named by `import_name`.
+pub fn import_files(path: &std::path::Path) -> Result<Vec<(String, u8, Vec<u8>)>> {
+    let shown = path.display();
+    let bytes = std::fs::read(path).map_err(|e| format!("{shown}: {e}"))?;
+    let ext = path
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    if matches!(ext.as_str(), "d81" | "d65" | "d64") {
+        let source = Disk::parse(bytes).map_err(|e| format!("{shown}: {e}"))?;
+        let resident = crate::launcher::is_editable(&source);
+        let mut out = Vec::new();
+        for e in source.entries()? {
+            if !(1..=3).contains(&e.kind) || (resident && e.name == "START") {
+                continue;
+            }
+            out.push((e.name.clone(), e.kind, source.read(&e)?));
+        }
+        if out.is_empty() {
+            return Err(format!("{shown} holds no PRG, SEQ or USR files."));
+        }
+        return Ok(out);
+    }
+    let (name, kind) = import_name(path)?;
+    Ok(vec![(name, kind, bytes)])
+}
 pub fn display_name(bytes: &[u8]) -> String {
     bytes
         .iter()

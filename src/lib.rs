@@ -11,5 +11,6 @@ pub mod direct_sd;
 pub mod fat_export;
 pub mod launcher;
 pub mod sd_export;
+pub mod transfer;
 #[cfg(windows)]
 pub mod windows;
