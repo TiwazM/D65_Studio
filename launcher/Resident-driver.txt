@@ -1,4 +1,4 @@
-D65 Studio 0.3.1 — resident read-only file service, ABI 1 (experimental)
+D65 Studio 0.3.1 (direct-SD reader) — resident read-only file service, ABI 1 (experimental)
 
 What it does
 ------------
@@ -68,7 +68,7 @@ Results:
  offset 6   status: 0 success, 2 failure (decimal 7686)
  offset 30,31 bytes copied, little endian (7710,7711); zero on failure/empty file
  offset 8   diagnostic stage (7688)
- offset 9   FDC status at failure
+ offset 9   SD controller status ($D680) at failure
  offset 10,11 mounted-image / format flags
  offset 12,13 last logical track / sector
 Offsets 0..5 and 64..87 are internal working memory. Optional LOAD compatibility
@@ -90,9 +90,12 @@ higher destinations. The staging bound is 57,344 file bytes. Larger files can
 be stored and extracted by the desktop app but cannot yet be read in chunks by
 this service; oversized lengths are rejected before staging. No bank wrapping.
 
-Each nonempty read follows a length-bounded chain, checks geometry and controller
-status, and validates the catalogue's 16-bit byte sum before copying to the final
-destination. Failure leaves that destination unchanged. This checksum detects
+Each nonempty read follows a length-bounded chain, checks geometry and SD
+controller status, and validates the catalogue's 16-bit byte sum before copying
+to the final destination. Sectors are read directly from the SD card: the image
+sector (track-1)*128 + sector/2 is added to the mounted image's start sector
+($D68C-$D68F), which is why the whole 5,570,560-byte container is usable and
+why the image must be contiguous on the card (Hyppo enforces this at mount). Failure leaves that destination unchanged. This checksum detects
 common transfer errors; it is not cryptographic authentication. Empty raw files
 return success without a DMA copy. No write-sector commands are issued.
 
@@ -112,13 +115,18 @@ START, so the image remains a single D65 file with no external dependencies.
 
 Validation and remaining limits
 -------------------------------
-The installed Xemu runs D81 controls of START, a 55,041-byte program, and the
-40,000-byte program's subsequent named SEQ read using its real DMA/Attic/FDC
-implementation and ROM 920413. The installed emulator cannot mount this D65
-container; extended-sector and cross-bank tests use the Xemu CPU/FDC harness
-with modeled DMA and D65 addressing. The new 0.3.0 reader is not yet tested on
-physical MEGA65 hardware. Earlier BANK2/EXTRA38 hardware successes were for the
-previous reader, not this revision.
+The direct-SD reader is exercised by verification/resident-driver-sd: a CPU
+harness built on Xemu's cpu65.c with a model of the SD controller registers,
+the SD sector buffer at $FFD6E00 and enhanced DMA. It runs 114 cases over the
+full-size fixture (examples/fullsize_fixture.rs: 95 programs plus data filling
+all 21,504 payload blocks, the last file on track 85 sector 242), at four
+different image start sectors including ones that carry into every address
+byte, for both the plain and the LOAD-compatibility reader. The installed Xemu
+cannot mount D65 images, so those tests use modeled SD reads, not Xemu's own
+SD/Hyppo path. The direct-SD reader has not yet been run on physical MEGA65
+hardware; earlier BANK2/EXTRA38 hardware successes were for the F011-based
+reader, not this revision. Images must be contiguous on the SD card, which
+Hyppo already requires to mount them at all.
 
 Sources: MEGA65 user guide, memory.tex (utility memory and Attic RAM),
 appendix-dmagic.tex (enhanced DMA options), appendix-kernal-jumptable.tex (VECTOR

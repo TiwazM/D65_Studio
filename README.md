@@ -16,7 +16,7 @@ The project began with a simple question: *Why is it so difficult to create and 
 - Convert supported D65/D81 container layouts, refusing conversions that would lose extended data.
 - Browse mounted images in **Windows Explorer or macOS Finder** using a local WebDAV bridge; no separate filesystem driver required.
 - Merge programs and supporting files from multiple D81s into a **read-only D65 compilation** with a `START` launcher.
-- Pack about **2.4 MB of shared launcher-and-file payload** in the current experimental compilation format.
+- Pack about **5.4 MB of shared launcher-and-file payload** into a compilation: the resident reader reads the mounted image's SD sectors directly, so the whole 5,570,560-byte container is usable.
 - Launch compatible MEGA65 programs and use a **resident, read-only file-reader API** for further file reads.
 - Optional **experimental KERNAL LOAD/VERIFY compatibility** for certain existing programs on ROM 920413, including BASIC `BLOAD`.
 - Backups, source-file verification and checks intended to detect corrupt or unsupported images.
@@ -40,21 +40,21 @@ Select a program from the menu.
 
 ## How the experimental loader works
 
-The MEGA65 D65 image container is **5,570,560 bytes**, but the standard D81-compatible filesystem only allocates 40 sectors per track. ROM **920413** does not ordinarily read files in the higher sectors used by the experimental compilation.
+The MEGA65 D65 image container is **5,570,560 bytes** (85 tracks × 256 logical sectors), but the standard D81-compatible filesystem only allocates 40 sectors per track, and ROM **920413** does not ordinarily read files in the higher sectors used by the experimental compilation. The F011 floppy-controller emulation in core 0.97.2 is a further limit: for D65 images it clamps physical sectors to 0–63 and tracks to 1–84 (`sdcardio.vhdl`), so track/sector reads can never reach more than about 2.7 MB of the image.
 
-D65 Studio addresses this with a small `START` program and a custom resident reader that accesses additional sectors without requiring a ROM flash. The reader keeps a small entry routine in the documented utility-memory region and uses reserved Attic RAM for its catalogue and read buffers.
+D65 Studio addresses this with a small `START` program and a custom resident reader that bypasses the F011 path. Hyppo only mounts a D65 whose FAT clusters are contiguous and publishes the image's first SD sector at `$D68C-$D68F`, so the reader computes each 512-byte image sector's SD address, reads it with the SD controller (`$D680-$D684`) and copies the wanted 256-byte half from the sector buffer at `$FFD6E00` by DMA. Every logical sector on tracks 1–85 is therefore reachable. The reader keeps a small entry routine in the documented utility-memory region and uses reserved Attic RAM for its catalogue and read buffers.
 
 | Current property | Status |
 | --- | --- |
 | D65 container | 5,570,560 bytes |
-| Experimental compilation capacity | About 2.4 MB shared by `START` and files |
+| Experimental compilation capacity | About 5.4 MB (21,504 blocks of 254 bytes) shared by `START` and files |
 | Supported menu PRG size | Up to 55,041 bytes including load address |
 | Menu entries | Up to 99 compatible programs |
 | Other imported files | PRG, SEQ and USR, subject to limits |
 | Resident API | Read-only; callable by cooperating applications |
 | Automatic `LOAD` / `BLOAD` support | Experimental, limited to supported calls on ROM 920413 |
 | `OPEN` streams, custom loaders, disk writes | Not supported |
-| Future capacity goal | Larger D65 payloads require additional controller work and hardware validation |
+| Hardware validation | The direct-SD reader passes the CPU/SD harness; a physical MEGA65 test of a full-size image is pending |
 
 ### Experimental compatibility mode
 

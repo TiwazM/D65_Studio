@@ -4,6 +4,9 @@ use std::collections::HashSet;
 pub type Result<T> = std::result::Result<T, String>;
 pub const D81_SIZE: usize = 819_200;
 pub const D65_SIZE: usize = 5_570_560;
+/// 254-byte payload blocks available to a resident compilation: every logical
+/// sector of the 84 non-directory tracks (about 5.46 MB).
+pub const PAYLOAD_BLOCKS: usize = 84 * 256;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Format {
     D81,
@@ -345,7 +348,9 @@ impl Disk {
         Ok(out)
     }
     /// Launcher images keep all directory metadata in the ROM-readable bank.
-    /// Payload start pointers can still refer to the extended sectors.
+    /// Payload start pointers can refer to any of the 256 logical sectors on
+    /// tracks 1-85 except the directory track; the resident reader addresses
+    /// them as SD sectors, so no controller geometry limit applies.
     /// Allocation use of a resident compilation, including START, in 254-byte blocks.
     pub fn resident_space(&self) -> Option<(usize, usize)> {
         let h = self.offset(40, 0).ok()?;
@@ -355,12 +360,12 @@ impl Disk {
         let mut used = HashSet::new();
         for e in self.entries().ok()? {
             for (t, s) in self.chain(&e).ok()? {
-                if t == 40 || s >= 120 || !used.insert((t, s)) {
+                if t == 40 || !used.insert((t, s)) {
                     return None;
                 }
             }
         }
-        Some((used.len(), 79 * 120))
+        Some((used.len(), PAYLOAD_BLOCKS))
     }
     pub fn chain(&self, e: &Entry) -> Result<Vec<(u8, u8)>> {
         let (mut t, mut s) = e.start;

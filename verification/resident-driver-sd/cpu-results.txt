@@ -1,0 +1,5 @@
+PASS: 114 CPU/SD cases with /home/claude/d65/launcher/reader.bin base 0x123456
+PASS: 114 CPU/SD cases with /home/claude/d65/launcher/reader.bin base 0
+PASS: 114 CPU/SD cases with /home/claude/d65/launcher/reader.bin base 0xFFFFD000
+PASS: 114 CPU/SD cases with /home/claude/d65/launcher/reader-compat.bin base 0x7FFFFFF0
+PASS: 114 CPU/SD cases with /home/claude/d65/launcher/reader-compat.bin base 0x123456

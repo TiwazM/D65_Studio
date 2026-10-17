@@ -276,7 +276,7 @@ impl Studio {
             self.merge_open = false;
             Ok(())
         })();
-        self.report(result, if self.launch_build && self.load_compatibility { "LOAD-compatible launch disk created for ROM 920413. Mount in drive 8 and RUN \"START\". Experimental; hardware test pending." } else if self.launch_build { "Resident launch disk created. Mount in drive 8 and RUN \"START\". New reader tested in Xemu controls; hardware test pending." } else { "Experimental merge created and verified offline. ROM 920413 cannot load later banks; a modified ROM or custom loader is required. Read-only." });
+        self.report(result, if self.launch_build && self.load_compatibility { "LOAD-compatible launch disk created for ROM 920413. Mount in drive 8 and RUN \"START\". Experimental; hardware test pending." } else if self.launch_build { "Resident launch disk created. Mount in drive 8 and RUN \"START\". Direct-SD reader; hardware test pending." } else { "Experimental merge created and verified offline. ROM 920413 cannot load later banks; a modified ROM or custom loader is required. Read-only." });
     }
     fn start_mount(&mut self) {
         #[cfg(windows)]
@@ -680,7 +680,7 @@ impl eframe::App for Studio {
                 ui.label("PRG, SEQ and USR files only. Duplicate names must be renamed first.");
                 ui.colored_label(Color32::YELLOW, "Ordinary ROM loading cannot read later banks. The optional START reader bypasses this limit. Do not SAVE, SCRATCH or VALIDATE.");
                 ui.checkbox(&mut self.launch_build, "Include START launcher (automatically imports multiple D81s)");
-                ui.label("Resident launcher: about 2.4 MB minus START. Menu programs up to 55,041 bytes with a BASIC entry at $2001. Other files are retained. Drive 8; top 64 KB of Attic RAM reserved.");
+                ui.label("Resident launcher: about 5.4 MB minus START. Menu programs up to 55,041 bytes with a BASIC entry at $2001. Other files are retained. Drive 8; top 64 KB of Attic RAM reserved.");
                 ui.add_enabled_ui(self.launch_build, |ui| {
                     ui.checkbox(&mut self.load_compatibility, "Experimental LOAD compatibility (ROM 920413)");
                 });
@@ -794,7 +794,7 @@ fn cli(args: &[String]) -> Result<()> {
         Some("create") if args.len()==4=>{let format=if args[1].eq_ignore_ascii_case("d81"){Format::D81}else if args[1].eq_ignore_ascii_case("d65"){Format::D65}else{return Err("Format must be d65 or d81".into())};Store::create(Path::new(&args[2]),Disk::create(format,&args[3],"65")?)?;},
         Some("list") if args.len()==2=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;println!("{} [{}] {} bytes",d.label(),d.disk_id(),d.bytes.len());for e in d.entries()?{println!("{:5} {:16} {}",e.blocks,e.name,e.type_name())}println!("{} blocks free",d.free_blocks());d.validate_writable()?;},
         Some("add") if args.len()==4=>{let mut s=Store::open(Path::new(&args[1]))?;let data=fs::read(&args[2]).map_err(|e|e.to_string())?;let kind=match Path::new(&args[2]).extension().and_then(|x|x.to_str()).unwrap_or("").to_ascii_lowercase().as_str(){"seq"=>1,"usr"=>3,_=>2};s.change(|d|d.put(&args[3],kind,&data,false))?;},
-        Some("launch" | "launch-compat") if args.len()>=3=>{let sources:Result<Vec<_>>=args[2..].iter().map(|p|Disk::parse(fs::read(p).map_err(|e|e.to_string())?)).collect();Store::create(Path::new(&args[1]),d65_studio::launcher::build_with_compat(&sources?, args[0]=="launch-compat")?)?;println!("Resident launch disk created. RUN \"START\" from drive 8. About 2.4 MB minus START; 55,041-byte program limit. New reader: hardware validation pending.");},
+        Some("launch" | "launch-compat") if args.len()>=3=>{let sources:Result<Vec<_>>=args[2..].iter().map(|p|Disk::parse(fs::read(p).map_err(|e|e.to_string())?)).collect();Store::create(Path::new(&args[1]),d65_studio::launcher::build_with_compat(&sources?, args[0]=="launch-compat")?)?;println!("Resident launch disk created. RUN \"START\" from drive 8. About 5.4 MB minus START; 55,041-byte program limit. Direct-SD reader: hardware validation pending.");},
         Some("merge") if args.len()>=4=>{let sources:Result<Vec<_>>=args[2..].iter().map(|p|Disk::parse(fs::read(p).map_err(|e|e.to_string())?)).collect();Store::create(Path::new(&args[1]),Disk::merge_d81(&sources?)?)?;println!("Experimental merge verified offline. Read-only; ROM 920413 cannot load later banks. A modified ROM or custom loader is required.");},
         Some("convert") if args.len()==4=>{let format=match args[3].as_str(){"d81"=>Format::D81,"d65"=>Format::D65,_=>return Err("Format must be d65 or d81".into())};let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?.convert(format)?;Store::create(Path::new(&args[2]),d)?;},
         #[cfg(any(target_os="macos", windows))]

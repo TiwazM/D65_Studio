@@ -1,4 +1,4 @@
-D65 Studio 0.3.0 resident reader
+D65 Studio 0.3.1 resident reader, direct SD sector reads
 
 See Resident-driver.txt for the complete ABI, memory contract and test limits.
 The desktop app embeds reader.bin. End users need no assembler or added tools.
@@ -7,10 +7,15 @@ Code/buffer/mailbox reserve $1600-$1EFF; Attic workspace reserves the top 64 KiB
 at $87F0000-$87FFFFF. BASIC graphics banks are not reserved or used.
 
 Menu programs have a BASIC entry at $2001, max 55,041 bytes including address.
-The normal-sector area is shared between START and payloads, adding almost
-800 KB over the old two-payload-bank design. Directory blocks remain T40/S3-39.
-Payload chains may cross the 0-39 / 40-79 / 80-119 sector groups. Standard BAM
-bits are marked unavailable and the app treats the custom compilation read-only.
+Payloads may use every logical sector 0-255 of tracks 1-85 except track 40;
+directory blocks remain T40/S3-39 so the ROM can still list the disk. The
+reader no longer uses the F011 track/sector path (the core clamps it to 64
+physical sectors per track). It adds the image sector, (track-1)*128 +
+sector/2, to the mounted image's start sector in $D68C-$D68F, reads that SD
+sector with command $02 at $D680, and DMAs the wanted half of the sector buffer
+at $FFD6E00. Hyppo only mounts contiguous images, so this addressing is exact.
+Standard BAM bits are marked unavailable and the app treats the compilation
+read-only. Mailbox offset 9 now holds the SD controller status on failure.
 
 The callable service stays resident after launch. It supports whole-file reads
 by exact name or index. It does not install automatic KERNAL LOAD/OPEN hooks.
@@ -20,5 +25,6 @@ Developer rebuild:
 Then rebuild the Rust application to embed the new bytes.
 
 Historical reader documentation and hardware tests in verification/launcher
-refer to earlier versions. They must not be presented as hardware validation
-of this reader. New evidence is in verification/resident-driver.
+and verification/resident-driver refer to the earlier F011-based readers. They
+must not be presented as hardware validation of this reader. New evidence is
+in verification/resident-driver-sd.

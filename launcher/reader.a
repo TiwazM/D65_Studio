@@ -1,4 +1,4 @@
-; D65 Studio resident read-only service v1. Original MIT code.
+; D65 Studio resident read-only service v2 (direct SD sector reads). Original MIT code.
 ; Entry $1600, buffer $1D00, mailbox $1E00; ABI in Resident-driver.txt.
 !cpu 4502
 * = $1600
@@ -90,14 +90,11 @@ keys:
     sta $d0
     bra cleanup
 fail:
-    lda $d082
+    lda $d680
     sta $1e09
     lda #2
     sta $1e06
 cleanup:
-    lda oldcontrol
-    and #$9f
-    sta $d080
     lda olddmamb
     sta $d704
     lda olddma
@@ -147,28 +144,22 @@ nibble:
     lda hexchars,x
     jmp $ffd2
 hexchars: !text "0123456789ABCDEF"
-skiphalf:
-    ldx #0
-skiploop:
-    lda $d087
-    inx
-    bne skiploop
-    rts
-wait:
-    ; Bounded wait; wall-clock duration depends on CPU speed.
+sdready:
+    ; Bounded wait for the SD controller to leave BUSY; duration depends on CPU speed.
     ldx #0
     ldy #0
     lda #64
     sta ticks
-waitloop:
-    bit $d082
-    bpl ready
+sdloop:
+    lda $d680
+    and #3
+    beq ready
     dex
-    bne waitloop
+    bne sdloop
     dey
-    bne waitloop
+    bne sdloop
     dec ticks
-    bne waitloop
+    bne sdloop
     sec
     rts
 ready:
@@ -201,9 +192,10 @@ runtext: !text "RUN"
     !byte 13
 errtext: !text "D65 READ FAILED - PROGRAM UNCHANGED"
     !byte 13
-    !text "CODE FDC MOUNT FORMAT TRACK SECTOR (HEX)"
+    !text "CODE SD MOUNT FORMAT TRACK SECTOR (HEX)"
     !byte 13,0
-oldcontrol: !byte 0
+stride: !byte 0
+offset: !word 0
 olddma: !byte 0
 olddmamb: !byte 0
 remain: !word 0
@@ -224,8 +216,6 @@ engine:
     sta olddma
     lda $d704
     sta olddmamb
-    lda $d080
-    sta oldcontrol
     lda #$47
     sta $d02f
     lda #$53
@@ -317,17 +307,7 @@ rawfile:
 notraw:
     lda #4
     sta $1e08
-    lda #$60
-    sta $d080
-    jsr wait
-    bcc spin
-    jmp fail
-spin:
-    lda #$05
-    sta $1e08
-    lda #$20
-    sta $d081
-    jsr wait
+    jsr sdready
     bcc next
     jmp fail
 next:
@@ -335,90 +315,117 @@ next:
     sta $1e08
     lda $1e00
     beq badlink
+    cmp #86
+    bcs badlink
+    lda #128
+    sta stride
+    lda $1e07
+    cmp #1
+    bne validlink
+    ; D81 control image: 40 logical sectors on 80 tracks.
+    lda #40
+    sta stride
+    lda $1e00
     cmp #81
     bcs badlink
     lda $1e01
-    cmp #120
+    cmp #40
     bcc validlink
 badlink:
     jmp fail
 validlink:
-    pha
     lda $1e00
     sta $1e0c
     lda $1e01
     sta $1e0d
-    pla
-    lsr
-    cmp #10
-    bcc front
-    sec
-    sbc #9
-    ldx #1
-    ldy #$68
-    bra geometry
-front:
+    ; Image sector = (track-1) * stride + logical sector / 2, where stride
+    ; is 128 half-KB sectors per D65 track (256 x 256 bytes) or 40 for D81.
+    lda #0
+    sta offset
+    sta offset+1
+    ldx $1e00
+    dex
+    beq trackdone
+trackloop:
     clc
-    adc #1
-    ldx #0
-    ldy #$60
-geometry:
-    sta $d085
-    stx $d086
-    sty $d080
-    lda $1e00
-    sec
-    sbc #1
-    sta $d084
+    lda offset
+    adc stride
+    sta offset
+    bcc trackstep
+    inc offset+1
+trackstep:
+    dex
+    bne trackloop
+trackdone:
+    lda $1e01
+    lsr
+    clc
+    adc offset
+    sta offset
+    bcc offsetdone
+    inc offset+1
+offsetdone:
+    ; SD sector = mounted image start ($D68C-$D68F) + image sector. Hyppo
+    ; refuses fragmented images, so every image byte has a fixed SD sector.
+    ; This bypasses the F011 track/sector path, which the core clamps to
+    ; 64 half-KB sectors per track, and reaches the whole 5,570,560 bytes.
     lda #7
     sta $1e08
-    jsr wait
-    bcc reset
+    clc
+    lda $d68c
+    adc offset
+    sta $d681
+    lda $d68d
+    adc offset+1
+    sta $d682
+    lda $d68e
+    adc #0
+    sta $d683
+    lda $d68f
+    adc #0
+    sta $d684
+    jsr sdready
+    bcc issue
     jmp fail
-reset:
+issue:
     lda #$08
     sta $1e08
-    lda #1
-    sta $d081
-    jsr wait
-    bcc read
-    jmp fail
-read:
-    lda #$09
-    sta $1e08
-    lda #$40
-    sta $d081
-    jsr wait
+    lda #$02
+    sta $d680
+    jsr sdready
     bcc readok
     jmp fail
 readok:
-    lda #$0a
+    lda #$09
     sta $1e08
-    lda $d082
-    ; SD-backed images fill the 512-byte buffer before CPU consumption.
-    ; The core sets LOST when another byte arrives while DRQ is still set,
-    ; even though it stores that byte in the buffer. LOST alone is therefore
-    ; not fatal for this image-only buffered reader. Keep RNF/CRC fatal and
-    ; validate the complete chain, length, PRG address and checksum below.
-    and #$18
+    lda $d680
+    and #$60
     beq buffer
     jmp fail
 buffer:
+    ; Copy the wanted 256-byte half of the SD sector buffer at $FFD6E00.
+    lda #$0a
+    sta $1e08
+    lda #$ff
+    sta dmasrcmb
+    lda #$0d
+    sta dmasrcbank
     lda $1e01
     and #1
-    beq take
-    jsr skiphalf
-take:
-    ldx #0
-copybuffer:
-    lda $d087
-    sta $1d00,x
-    inx
-    bne copybuffer
-    lda $1e01
-    and #1
-    bne links
-    jsr skiphalf
+    clc
+    adc #$6e
+    sta dmasrc+1
+    lda #0
+    sta dmasrc
+    sta dmadstmb
+    sta dmadstbank
+    sta dmadst
+    sta dmacount
+    lda #$1d
+    sta dmadst+1
+    lda #1
+    sta dmacount+1
+    jsr dma
 links:
     lda #$0b
     sta $1e08

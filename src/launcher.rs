@@ -82,8 +82,10 @@ fn valid_basic(prg: &[u8]) -> bool {
     }
 }
 
-/// Build a read-only compilation within the tested logical sectors 0..119.
-/// START alone uses ordinary DOS allocation; payload chains can cross banks.
+/// Build a read-only compilation using every logical sector (0..255) of every
+/// track except the directory track. START alone uses ordinary DOS allocation;
+/// payload chains can start anywhere because the resident reader reads the
+/// mounted image's SD sectors directly instead of F011 track/sector addresses.
 pub fn build(sources: &[Disk]) -> Result<Disk> {
     build_with_compat(sources, false)
 }
@@ -138,25 +140,28 @@ pub fn build_with_compat(sources: &[Disk], compatibility: bool) -> Result<Disk> 
     let start = disk.entries()?.remove(0);
     let start_chain = disk.chain(&start)?;
     let occupied: std::collections::HashSet<_> = start_chain.iter().copied().collect();
+    // Fill 40-sector groups across all tracks in turn, so the ROM-readable
+    // sectors 0..39 are used first and small compilations stay D81-shaped.
     let mut free = Vec::new();
-    for bank in 0..3 {
-        for t in 1..=80 {
+    for group in (0..256).step_by(40) {
+        for t in 1..=85 {
             if t == 40 {
                 continue;
             }
-            for s in bank * 40..bank * 40 + 40 {
-                if !occupied.contains(&(t, s)) {
-                    free.push((t, s));
+            for s in group..(group + 40).min(256) {
+                if !occupied.contains(&(t, s as u8)) {
+                    free.push((t, s as u8));
                 }
             }
         }
     }
+    debug_assert_eq!(free.len() + start_chain.len(), crate::disk::PAYLOAD_BLOCKS);
     let needed: usize = files
         .iter()
         .map(|(_, d)| d.len().div_ceil(254).max(1))
         .sum();
     if needed > free.len() {
-        return Err(format!("These files exceed the launch disk capacity: {} blocks needed, {} available after START (about 2.4 MB before the menu).", needed, free.len()));
+        return Err(format!("These files exceed the launch disk capacity: {} blocks needed, {} available after START (about 5.4 MB before START).", needed, free.len()));
     }
     let mut slots = vec![disk.bytes[start.offset + 2..start.offset + 32].to_vec()];
     let mut cursor = 0;
@@ -221,7 +226,7 @@ pub fn build_with_compat(sources: &[Disk], compatibility: bool) -> Result<Disk> 
     let mut used = std::collections::HashSet::new();
     for (index, entry) in entries.iter().enumerate() {
         for ts in disk.chain(entry)? {
-            if ts.0 == 40 || ts.1 >= 120 || !used.insert(ts) {
+            if ts.0 == 40 || !used.insert(ts) {
                 return Err("Launch allocation verification failed.".into());
             }
         }
@@ -570,7 +575,7 @@ mod compatibility_tests {
             "at least one file crosses a sector-group boundary"
         );
         let (used, total) = result.resident_space().unwrap();
-        assert_eq!(total, 9480);
+        assert_eq!(total, 84 * 256);
         assert_eq!(used, entries.iter().map(|e| e.blocks).sum::<usize>());
         assert!(result.read(&entries[0]).unwrap().len() < 30_000);
     }
@@ -629,6 +634,52 @@ mod compatibility_tests {
         );
     }
     #[test]
+    fn uses_extended_sectors_and_high_tracks() {
+        // About 3.3 MB of data lands beyond the old 120-sector limit: on
+        // logical sectors 128..255 and on tracks 81..85.
+        let sources: Vec<_> = (0..4)
+            .map(|i| {
+                let mut d = disk(&format!("GAME{i}"), &program());
+                d.put(&format!("DATA{i}"), 1, &vec![i as u8 + 1; 800_000], false)
+                    .unwrap();
+                d
+            })
+            .collect();
+        let result = build(&sources).unwrap();
+        let entries = result.entries().unwrap();
+        let mut high_sector = false;
+        let mut high_track = false;
+        for e in &entries {
+            for (t, s) in result.chain(e).unwrap() {
+                assert!((1..=85).contains(&t) && t != 40);
+                high_sector |= s >= 128;
+                high_track |= t > 80;
+            }
+        }
+        assert!(high_sector && high_track);
+        for (i, e) in entries
+            .iter()
+            .filter(|e| e.name.starts_with("DATA"))
+            .enumerate()
+        {
+            assert_eq!(result.read(e).unwrap(), vec![i as u8 + 1; 800_000]);
+        }
+        let (used, total) = result.resident_space().unwrap();
+        assert_eq!(total, 84 * 256);
+        assert_eq!(used, entries.iter().map(|e| e.blocks).sum::<usize>());
+        // Every block maps to one half of one 512-byte image sector, exactly
+        // as the reader computes it: (track-1)*128 + sector/2, half = sector&1.
+        for e in &entries {
+            for (t, s) in result.chain(e).unwrap() {
+                let sd = (t as usize - 1) * 128 + (s as usize >> 1);
+                assert_eq!(
+                    result.offset(t, s).unwrap(),
+                    sd * 512 + (s as usize & 1) * 256
+                );
+            }
+        }
+    }
+    #[test]
     fn packing_rejects_conflicts_and_over_capacity() {
         assert!(build(&[
             disk("A", &program()),
@@ -638,10 +689,14 @@ mod compatibility_tests {
         .err()
         .unwrap()
         .contains("Duplicate"));
-        let mut payload = program();
-        payload.resize(40_000, 0);
-        let sources: Vec<_> = (0..61)
-            .map(|i| disk(&format!("GAME{i}"), &payload))
+        // Seven D81s each nearly full of data: about 5.6 MB, past the 5.46 MB payload space.
+        let sources: Vec<_> = (0..7)
+            .map(|i| {
+                let mut d = disk(&format!("GAME{i}"), &program());
+                d.put(&format!("DATA{i}"), 1, &vec![0x42; 800_000], false)
+                    .unwrap();
+                d
+            })
             .collect();
         assert!(build(&sources).err().unwrap().contains("exceed"));
     }

@@ -1,0 +1,37 @@
+D65 Studio direct-SD resident reader — 17 October 2026
+
+Why: core 0.97.2 (and the development branch) clamps F011 D65 addressing in
+sdcardio.vhdl to physical sectors 0-63 and tracks 0-83 ("if f011_track >= 84
+or physical_sector > 63 then offset := 0"), so track/sector reads reach at most
+84 x 128 logical sectors, about 2.7 MB of the 5,570,560-byte image. The reader
+now reads SD sectors directly: start sector from $D68C-$D68F + (track-1)*128 +
+sector/2, command $02 at $D680, DMA of the wanted 256-byte half from $FFD6E00.
+
+Harness: sd-probe.c links against Xemu's cpu65.c (git master, shallow clone)
+with CPU_65CE02 and CPU65=cpu; shim/ supplies the SDL integer typedefs so no
+SDL is needed; stubs.c provides chatty_xemu/debug_fp. Build:
+  gcc -O1 -w -Ishim -I<xemu> -DXEMU_HAS_SDL2 -DCPU_65CE02 -DCPU65=cpu \
+      -o sd-probe sd-probe.c stubs.c <xemu>/xemu/cpu65.c
+Fixture: cargo run --locked --example fullsize_fixture -- <dir>
+  95 menu programs (55,000 bytes; GAME94 is the 55,041-byte maximum) plus
+  FILLER (198,000 bytes) and MESSAGE: 21,491 of 21,504 blocks, 5,458,714
+  payload bytes. MESSAGE is on track 85 sector 242; GAME92-94 sit on logical
+  sectors 128-255 of tracks 8-35.
+Run: ./run-sd-probes.sh <dir> <reader.bin> <base-sector>
+
+Cases per run (114): every program launched and verified byte-for-byte at
+$2001, then re-read by name into bank 1, destination checks and a missing
+name; GAME00 also in failure modes 1-13 (corrupt data, track 86, bad length,
+SD timeout, SD error flags, not mounted, short length, cyclic chain, wrong
+format, bad catalogue, bad header, bad index, track 0); EMPTY-style raw reads;
+MESSAGE raw by index/name, stage-only command and protected destination;
+FILLER (198,000 bytes) rejected as oversized before staging. Every failure
+leaves $2000-$D6FF unchanged and never issues an SD write command. The harness
+aborts on any F011 register access.
+
+Results: cpu-results.txt. All runs pass at image start sectors 0, $123456,
+$FFFFD000 and $7FFFFFF0 (the last two carry into every address byte), with
+both reader.bin and reader-compat.bin.
+
+Not covered: physical MEGA65 hardware, Xemu's own Hyppo/SD path (installed
+Xemu does not mount D65), and non-SDHC cards (Hyppo itself supports SDHC only).
