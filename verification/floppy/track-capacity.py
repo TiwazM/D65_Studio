@@ -19,6 +19,8 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--track", type=int, default=75)
 ap.add_argument("--m65rs", default="/Applications/mega65studio/m65rs")
 ap.add_argument("--dry-run", action="store_true", help="only read status registers")
+ap.add_argument("--erase", action="store_true",
+                help="format the track at the standard HD rate before each test format")
 ap.add_argument("--settings", default="MFM:40,MFM:32,MFM:29,RLL:27,RLL:25,RLL:23,RLL:21")
 args = ap.parse_args()
 
@@ -84,6 +86,18 @@ results = []
 for setting in args.settings.split(","):
     enc, rate = setting.split(":")
     rate = int(rate)
+    if args.erase:
+        # Overwrite whatever was on the track at the standard HD rate first,
+        # the way the MEGA65 team's floppycapacity test erases it.
+        poke(0x6AE, 0x00)
+        poke(0x6A2, 40)
+        poke(0x084, args.track)
+        poke(0x085, 21)
+        poke(0x086, 0)
+        poke(0x081, 0x00)
+        wait_idle()
+        poke(0x081, 0xA0)
+        wait_idle(timeout=5.0)
     # Format: fixed rate and encoding, TIB says up to 64 sectors.
     poke(0x6AE, 0x01 if enc == "RLL" else 0x00)
     poke(0x6A2, rate)

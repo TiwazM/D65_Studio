@@ -111,3 +111,19 @@ D65.
 - Afterwards the MEGA65 was reset: drive 0 is back to normal (`$D6A1` = `$08`).
 
 Raw log: `track-capacity-run2.log`.
+
+## Second session, 19 October 2026
+
+- The MEGA65 team's `floppycapacity` test (mega65-tools, built with cc65 2.18;
+  the upstream file is missing its final `}`) hung on its first step. It erases
+  a track with the C65-style unbuffered format (`$D081 = $A1`) and waits for
+  DRQ (`$D082` bit 6), which never came on this core. Stopped after 8 minutes.
+- `track-capacity.py --erase` (a standard-HD format first, then the test
+  format, on track 75 of the same disk) got **no** clean sectors at any
+  setting, including the standard HD rate that worked in the first run (11
+  sectors found, all failing). The TIBs read back inconsistently. Log:
+  `track-capacity-run3-erase.log`.
+- So far only one run, on fresh media, gave clean HD sectors. Either the disk
+  or drive is marginal at HD rates, or the core's HD read path isn't
+  dependable yet. A new HD disk (and a check that this one really is HD) is the
+  next thing to rule out before building anything on top.
