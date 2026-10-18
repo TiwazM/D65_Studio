@@ -9,4 +9,5 @@ lipo -create target/aarch64-apple-darwin/release/mega65-disklab target/x86_64-ap
 cp README.md FORMAT.md launcher/Reader-notes.txt launcher/Resident-driver.txt launcher/Resident-demo.bas launcher/LOAD-compatibility.txt "$bundle/Resources/"
 cp packaging/Info.plist "$bundle/Info.plist"
 codesign --force --deep --sign - 'dist/MEGA65 DiskLab.app'
+touch 'dist/MEGA65 DiskLab.app'  # so Finder shows the rebuild date on the bundle
 echo 'Built dist/MEGA65 DiskLab.app (local ad-hoc signature).'
