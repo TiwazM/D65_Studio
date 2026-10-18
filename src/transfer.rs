@@ -508,10 +508,12 @@ mod tests {
             ]
         );
         assert!(plan(&rs, &[], &Link::Ethernet(None), img, "GAME.D65", false).is_err());
+        // The port is given: with mega65_ftp an automatic port probes /dev,
+        // which has no adapter on a build machine.
         let p = plan_with(
             &ftp,
             &[rs.clone(), ftp.clone()],
-            &Link::Serial(None),
+            &Link::Serial(Some("/dev/ttyUSB0".into())),
             img,
             "GAME.D65",
             true,
@@ -521,7 +523,14 @@ mod tests {
         assert_eq!(p.steps.last().unwrap().label, "run");
         assert_eq!(
             p.steps.last().unwrap().args,
-            ["type", "--buffer", "-r", "RUN\"START\""]
+            [
+                "type",
+                "--buffer",
+                "-r",
+                "RUN\"START\"",
+                "--device",
+                "/dev/ttyUSB0"
+            ]
         );
         assert_eq!(p.steps.last().unwrap().program, rs.path);
         assert!(plan_with(

@@ -18,7 +18,7 @@ jobs:
     name: macOS (universal .app)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
@@ -39,7 +39,7 @@ jobs:
           cp packaging/Info.plist "out/$app/Contents/Info.plist"
           codesign --force --deep --sign - "out/$app"
           cd out && ditto -c -k --keepParent "$app" "MEGA65-DiskLab-${GITHUB_REF_NAME}-macos-universal.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: macos
           path: out/*.zip
@@ -48,7 +48,7 @@ jobs:
     name: Windows x64
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Test
@@ -64,7 +64,7 @@ jobs:
           Copy-Item README.md, WINDOWS.txt, LICENSE "out/$name/"
           Copy-Item launcher/Reader-notes.txt, launcher/Resident-driver.txt, launcher/Resident-demo.bas, launcher/LOAD-compatibility.txt "out/$name/launcher/"
           Compress-Archive -Path "out/$name" -DestinationPath "out/$name.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: windows
           path: out/*.zip
@@ -73,7 +73,7 @@ jobs:
     name: Linux x64
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: System libraries for eframe
@@ -90,7 +90,7 @@ jobs:
           cp target/release/mega65-disklab README.md LICENSE "out/$name/"
           cp launcher/Reader-notes.txt launcher/Resident-driver.txt launcher/Resident-demo.bas launcher/LOAD-compatibility.txt "out/$name/launcher/"
           tar -C out -czf "out/$name.tar.gz" "$name"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: linux
           path: out/*.tar.gz
@@ -100,7 +100,7 @@ jobs:
     needs: [macos, windows, linux]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: packages
           merge-multiple: true
