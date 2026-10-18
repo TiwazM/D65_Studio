@@ -307,3 +307,26 @@ fn disk_images_import_all_of_their_files() {
     }
     assert_eq!(target.entries().unwrap().len(), 3);
 }
+
+#[test]
+fn lock_file_disappears_when_the_image_is_closed() {
+    use mega65_disklab::{
+        disk::{Disk, Format},
+        store::Store,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("a.d81");
+    let s = Store::create(&p, Disk::create(Format::D81, "A", "65").unwrap()).unwrap();
+    let lock = dir.path().join("a.d81.lock");
+    assert!(lock.exists());
+    assert!(
+        Store::open(&p).is_err(),
+        "second open must be refused while held"
+    );
+    drop(s);
+    assert!(!lock.exists());
+    let s = Store::open(&p).unwrap();
+    assert!(lock.exists());
+    drop(s);
+    assert!(!lock.exists());
+}
