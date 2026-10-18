@@ -21,7 +21,8 @@ ap.add_argument("--m65rs", default="/Applications/mega65studio/m65rs")
 ap.add_argument("--dry-run", action="store_true", help="only read status registers")
 ap.add_argument("--erase", action="store_true",
                 help="format the track at the standard HD rate before each test format")
-ap.add_argument("--settings", default="MFM:40,MFM:32,MFM:29,RLL:27,RLL:25,RLL:23,RLL:21")
+ap.add_argument("--settings", default="MFM:40,MFM:32,MFM:29,RLL:27,RLL:25,RLL:23,RLL:21",
+                help="ENC:RATE[:A8] list; A8 formats track-at-once without gaps instead of $A0")
 args = ap.parse_args()
 
 
@@ -87,8 +88,9 @@ for _ in range(args.track):
 expected = bytes((62 + i) & 0xFF for i in range(512))
 results = []
 for setting in args.settings.split(","):
-    enc, rate = setting.split(":")
+    enc, rate, *variant = setting.split(":")
     rate = int(rate)
+    command = 0xA8 if variant == ["A8"] else 0xA0
     if args.erase:
         # Overwrite whatever was on the track at the standard HD rate first,
         # the way the MEGA65 team's floppycapacity test erases it.
@@ -109,7 +111,7 @@ for setting in args.settings.split(","):
     poke(0x086, 0)
     poke(0x081, 0x00)
     wait_idle()
-    poke(0x081, 0xA0)                     # hardware format, with gaps, no precomp
+    poke(0x081, command)                  # hardware format: $A0 with gaps, $A8 track-at-once
     if not wait_idle(timeout=5.0):
         sys.exit("Format did not finish.")
     # Read back at the same rate and encoding, set explicitly: letting the
@@ -148,7 +150,7 @@ for setting in args.settings.split(","):
     last = max([x for x in range(1, s + 1) if x not in missing] or [0])
     bpt = good * 512
     results.append((enc, rate, tib, last, good, bad))
-    print(f"{enc} rate {rate:2d}: TIB {tib} | sectors found {last}, good {good}, "
+    print(f"{enc} rate {rate:2d} ${command:02X}: TIB {tib} | sectors found {last}, good {good}, "
           f"wrong data {bad or '-'}, CRC errors {crc or '-'}, not found {[m for m in missing if m < last] or '-'} | {bpt} bytes/track side | x83x2 = {bpt * 166 / 1e6:.2f} MB")
 
 poke(0x080, 0x00)  # motor off
