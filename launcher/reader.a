@@ -32,12 +32,7 @@ destinationok:
     ; Never issue a zero-length DMA (it means 65536 bytes).
     lda staged
     ora staged+1
-    bne nonzerocommit
-    lda #0
-    sta $1e06
-    sta $1e1e
-    sta $1e1f
-    jmp cleanup
+    lbeq succeed
 nonzerocommit:
     lda staged
     sta dmacount
@@ -86,6 +81,10 @@ keys:
     lda #4
     sta $d0
     bra cleanup
+succeed:
+    lda #0
+    sta $1e06
+    bra cleanup
 fail:
 !ifndef COMPAT {
     ldx savedsp
@@ -107,16 +106,9 @@ cleanup:
     bne return
     lda $1e0e
     bne return
-    ldx #0
-errprint:
-    lda errtext,x
-    beq diagnostic
-    phx
+    ; A failed launch prints "?" and the six bytes at $1E08 in hex.
+    lda #'?'
     jsr $ffd2
-    plx
-    inx
-    bra errprint
-diagnostic:
     ldx #0
 diagloop:
     lda $1e08,x
@@ -193,8 +185,6 @@ dmadstbank: !byte 4
     !word 0
 runtext: !text "RUN"
     !byte 13
-errtext: !text "READ FAILED"
-    !byte 13,0
 offset: !word 0
 olddma: !byte 0
 olddmamb: !byte 0
@@ -285,9 +275,7 @@ openlength:
     sta $1e19
     lda $1e01
     sta $1e1a
-    lda #0
-    sta $1e06
-    jmp cleanup
+    jmp succeed
 notopen:
 }
 sizeok:
@@ -458,8 +446,7 @@ links:
     ldx $1d00
     bne gotcount
     lda $1d01
-    bne terminal
-    jmp fail
+    lbeq fail
 terminal:
     sec
     sbc #1
@@ -597,9 +584,9 @@ streamloop:
     lda $1e15
     ora $1e16
     ora $1e17
-    lbeq streamdone
+    lbeq succeed
     lda quota
-    lbeq streamdone
+    lbeq succeed
     ; Attic RAM megabytes $80-$86 only; $87 holds this driver's catalogue.
     lda $1e14
     cmp #$80
@@ -631,6 +618,29 @@ streamloop:
     sta dmasrc
     lda #$1d
     sta dmasrc+1
+    lda blockcount
+    sta left
+streampart:
+    ; DMA addresses wrap inside a megabyte (verified on a MEGA65 R6), so a
+    ; block that crosses into the next megabyte is copied in two parts.
+    lda left
+    sta part
+    lda $1e11
+    cmp #$ff
+    bne streamwhole
+    lda $1e0f
+    cmp #$0f
+    bne streamwhole
+    clc
+    lda $1e10
+    adc part
+    bcc streamwhole
+    beq streamwhole
+    lda #0
+    sec
+    sbc $1e10
+    sta part
+streamwhole:
     ldx #2
 streamdma:
     lda $1e0f,x
@@ -644,26 +654,36 @@ streamdma:
     stx dmasrcmb
     stx dmasrcbank
     stx dmacount+1
-    lda blockcount
+    lda part
     sta dmacount
     jsr dma
+    clc
+    lda dmasrc
+    adc part
+    sta dmasrc
+    clc
+    lda $1e10
+    adc part
+    sta $1e10
+    bcc streamrest
+    inc $1e11
+    bne streamrest
+    inc $1e0f
+    lda $1e0f
+    and #$0f
+    bne streamrest
+    sta $1e0f
+    inc $1e14
+streamrest:
+    sec
+    lda left
+    sbc part
+    sta left
+    lbne streampart
     lda $1e00
     sta $1e19
     lda $1e01
     sta $1e1a
-    clc
-    lda $1e10
-    adc blockcount
-    sta $1e10
-    bcc streamcount
-    inc $1e11
-    bne streamcount
-    inc $1e0f
-    lda $1e0f
-    and #$0f
-    bne streamcount
-    sta $1e0f
-    inc $1e14
 streamcount:
     clc
     lda $1e1e
@@ -674,11 +694,9 @@ streamcount:
 streamnext:
     dec quota
     jmp streamloop
-streamdone:
-    lda #0
-    sta $1e06
-    jmp cleanup
 quota: !byte 0
+left: !byte 0
+part: !byte 0
 }
 
 ; All executable code remains in the documented $1600-$1CFF utility area.

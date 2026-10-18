@@ -48,7 +48,10 @@ void cpu65_write_callback(Uint16 a,Uint8 v){
  if(sm==0x87){assert(src>=0xf0000&&src+n<=0x100000);sp=attic+src-0xf0000;}
  else if(sm==0xff){assert(src>=0xd6e00&&src+n<=0xd7000);sp=((io[0x689]&0x80)?sdbuf:fdbuf)+src-0xd6e00;}
  else{assert(sm==0&&src+n<=sizeof mem);sp=mem+src;}
- if(dm==0x87){assert(dst>=0xf0000&&dst+n<=0xfe000);dp=attic+dst-0xf0000;}else if(dm>=0x80&&dm<0x87){unsigned o=((dm-0x80)<<20)+dst;assert(o+n<=7u<<20);dp=bigattic+o;}/* 28-bit addresses carry across banks and megabytes */else{assert(dm==0&&dst+n<=sizeof mem);dp=mem+dst;}memmove(dp,sp,n);dmas++;
+ if(dm==0x87){assert(dst>=0xf0000&&dst+n<=0xfe000);dp=attic+dst-0xf0000;}else if(dm>=0x80&&dm<0x87){
+  /* The DMA address wraps inside its megabyte (verified on a MEGA65 R6):
+     bytes past $xFFFFF land at the start of the same megabyte. */
+  for(unsigned i=0;i<n;i++)bigattic[((dm-0x80)<<20)+((dst+i)&0xfffff)]=sp[i];dmas++;return;}else{assert(dm==0&&dst+n<=sizeof mem);dp=mem+dst;}memmove(dp,sp,n);dmas++;
  }
 }
 void cpu65_write_rmw_callback(Uint16 a,Uint8 old,Uint8 value){cpu65_write_callback(a,value);}

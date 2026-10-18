@@ -46,3 +46,18 @@ from the SD card, START entry 95 (GAME94, 55,041 bytes on logical sectors
 
 Not covered: Xemu's own Hyppo/SD path, Xemu's own Hyppo/SD path (installed
 Xemu does not mount D65), and non-SDHC cards (Hyppo itself supports SDHC only).
+
+Streaming API (ABI 2), 18-19 October 2026, MEGA65 R6, core 0.97, ROM 920413:
+Stream-demo.bas on a copy of a working image (SPACE.SCP, 2,713,600 bytes,
+stored on 10,684 blocks across tracks 5-39 and logical sectors up to 255)
+opened SPACE.SCP by name and streamed it into Attic RAM at $8000000 with
+command 8 (200 blocks per call, 54 calls). The first build reported STREAM
+OK, but reading $8000000-$829677F back over JTAG showed 494 wrong bytes, all
+at megabyte boundaries: the DMA address wraps inside its megabyte rather than
+carrying into the next, so the tail of the block that straddled $8100000 and
+$8200000 landed at the start of the same megabyte. The harness had assumed a
+carry. The reader now copies a straddling block in two DMAs, and sd-probe.c
+models the wrap; the earlier reader fails the harness at GAME94 mode 30, the
+fixed one passes 120 cases (114 for the LOAD-compatibility reader, which has
+no streaming). On the machine, the fixed reader streamed SPACE.SCP again and
+the 2,713,600 bytes read back from Attic RAM were identical to the file.

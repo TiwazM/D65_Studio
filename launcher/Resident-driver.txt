@@ -84,7 +84,9 @@ inside the D65 and pull it into Attic RAM piece by piece:
          of 254 bytes (the last one shorter) are copied. Offsets 30/31 return
          the bytes copied, 21..23 the bytes left, and the destination at
          20/15/16/17 is advanced past them, carrying across banks and
-         megabytes. Repeat command 8 until it returns 0 bytes.
+         megabytes (a block that straddles a megabyte is copied in two
+         DMAs, because the DMA address itself wraps inside its megabyte).
+         Repeat command 8 until it returns 0 bytes.
 
 Destinations are Attic RAM megabytes $80-$86 only (7 MiB; megabyte $87 holds
 this driver's catalogue and staging). Use DMA to move data on from there.
@@ -108,7 +110,7 @@ Offsets 0..5 and 64..87 are internal working memory. Optional LOAD compatibility
 also reserves $1E80-$1ED7 and uses private command 5; applications must not use
 that command or change the hook state. Offset 7 is reserved (it was a developer
 D81-control-test flag in ABI 1). Clear the mailbox when installing. START does
-this automatically. A failed command 0 prints READ FAILED and the six bytes at
+this automatically. A failed command 0 prints "?" and the six bytes at
 offsets 8..13 in hex (stage, SD status, mount and format flags, track, sector).
 
 Stage $12 = invalid command/catalogue or incompatible file type; $13 = name or
@@ -166,8 +168,9 @@ FILLER (198,000 bytes, a 24-bit length), GAME94 and MESSAGE in 37-block chunks
 across a bank and a megabyte boundary (120 cases for the plain reader). The
 installed Xemu cannot mount D65 images, so those tests use modeled SD reads.
 On a MEGA65 R6 (core 0.97, ROM 920413) the reader has launched a 55,041-byte
-program from logical sectors 128-255 (October 2026); see
-verification/resident-driver-sd/Results.txt for the streaming hardware run. Images must be contiguous on the SD card, which
+program from logical sectors 128-255, and streamed a 2,713,600-byte file into
+Attic RAM byte for byte (October 2026); see
+verification/resident-driver-sd/Results.txt. Images must be contiguous on the SD card, which
 Hyppo already requires to mount them at all.
 
 Sources: MEGA65 user guide, memory.tex (utility memory and Attic RAM),
