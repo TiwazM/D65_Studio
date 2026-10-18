@@ -35,7 +35,7 @@ jobs:
           app='MEGA65 DiskLab.app'
           rm -rf "out/$app" && mkdir -p "out/$app/Contents/MacOS" "out/$app/Contents/Resources"
           lipo -create target/aarch64-apple-darwin/release/mega65-disklab target/x86_64-apple-darwin/release/mega65-disklab -output "out/$app/Contents/MacOS/mega65-disklab"
-          cp README.md LICENSE WINDOWS.txt launcher/Reader-notes.txt launcher/Resident-driver.txt launcher/Resident-demo.bas launcher/LOAD-compatibility.txt "out/$app/Contents/Resources/"
+          cp README.md LICENSE WINDOWS.txt launcher/Reader-notes.txt launcher/Resident-driver.txt launcher/Resident-demo.bas launcher/Stream-demo.bas launcher/Stream-demo.prg launcher/LOAD-compatibility.txt "out/$app/Contents/Resources/"
           cp packaging/Info.plist "out/$app/Contents/Info.plist"
           codesign --force --deep --sign - "out/$app"
           cd out && ditto -c -k --keepParent "$app" "MEGA65-DiskLab-${GITHUB_REF_NAME}-macos-universal.zip"
@@ -62,7 +62,7 @@ jobs:
           New-Item -ItemType Directory -Path "out/$name/launcher" -Force | Out-Null
           Copy-Item target/release/mega65-disklab.exe "out/$name/"
           Copy-Item README.md, WINDOWS.txt, LICENSE "out/$name/"
-          Copy-Item launcher/Reader-notes.txt, launcher/Resident-driver.txt, launcher/Resident-demo.bas, launcher/LOAD-compatibility.txt "out/$name/launcher/"
+          Copy-Item launcher/Reader-notes.txt, launcher/Resident-driver.txt, launcher/Resident-demo.bas, launcher/Stream-demo.bas, launcher/Stream-demo.prg, launcher/LOAD-compatibility.txt "out/$name/launcher/"
           Compress-Archive -Path "out/$name" -DestinationPath "out/$name.zip"
       - uses: actions/upload-artifact@v5
         with:
@@ -88,7 +88,7 @@ jobs:
           name="MEGA65-DiskLab-${GITHUB_REF_NAME}-linux-x64"
           mkdir -p "out/$name/launcher"
           cp target/release/mega65-disklab README.md LICENSE "out/$name/"
-          cp launcher/Reader-notes.txt launcher/Resident-driver.txt launcher/Resident-demo.bas launcher/LOAD-compatibility.txt "out/$name/launcher/"
+          cp launcher/Reader-notes.txt launcher/Resident-driver.txt launcher/Resident-demo.bas launcher/Stream-demo.bas launcher/Stream-demo.prg launcher/LOAD-compatibility.txt "out/$name/launcher/"
           tar -C out -czf "out/$name.tar.gz" "$name"
       - uses: actions/upload-artifact@v5
         with:

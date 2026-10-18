@@ -146,7 +146,7 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
         return Err("The START menu holds at most 99 MEGA65 BASIC programs.".into());
     }
     let mut catalog = vec![0; 8 + CATALOG_ENTRY * files.len()];
-    catalog[..5].copy_from_slice(b"D65R\x01");
+    catalog[..5].copy_from_slice(b"D65R\x02");
     catalog[5..7].copy_from_slice(&(files.len() as u16).to_le_bytes());
     // DATA values use three decimal digits, so substituting final addresses
     // cannot change START's length or allocation (no layout fixed-point guess).
@@ -241,13 +241,19 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
         let c = &mut catalog[8 + index * CATALOG_ENTRY..8 + (index + 1) * CATALOG_ENTRY];
         c[..16].copy_from_slice(&entry.raw_name);
         c[16..18].copy_from_slice(&[chain[0].0, chain[0].1]);
-        // Files larger than the current whole-file reader window remain
-        // extractable. $FFFF is an unsupported-length sentinel, never a wrap.
-        c[18..20].copy_from_slice(&(u16::try_from(data.len()).unwrap_or(u16::MAX)).to_le_bytes());
+        // ABI 2. Below 64 KiB: length, byte sum, type, 0. From 64 KiB on the
+        // length field holds $FFFF (whole-file reads refuse it, never a
+        // wrap), the sum field length bits 0-15 and byte 23 bits 16-23, for
+        // the streaming commands.
         let checksum = data.iter().fold(0u16, |sum, b| sum.wrapping_add(*b as u16));
-        c[20..22].copy_from_slice(&checksum.to_le_bytes());
+        let (length, sum, high) = match u16::try_from(data.len()) {
+            Ok(n) => (n, checksum, 0),
+            Err(_) => (u16::MAX, data.len() as u16, (data.len() >> 16) as u8),
+        };
+        c[18..20].copy_from_slice(&length.to_le_bytes());
+        c[20..22].copy_from_slice(&sum.to_le_bytes());
         c[22] = entry.kind;
-        c[23] = entry.flags;
+        c[23] = high;
     }
     let starter = make_start(&menu, &catalog, compatibility)?;
     if starter.len() != placeholder.len() {

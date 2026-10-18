@@ -22,7 +22,15 @@
 		</data>
 		<key>Resources/Resident-driver.txt</key>
 		<data>
-		+vlXhQUiF+XZacPRf7gFSa93o6A=
+		LGARoCzAD1+vH6TXv3biMSz2YuY=
+		</data>
+		<key>Resources/Stream-demo.bas</key>
+		<data>
+		3xQOhugAy5mLW4AtwqIIX7ZMmOs=
+		</data>
+		<key>Resources/Stream-demo.prg</key>
+		<data>
+		oL8DzYPM4NzY/V4YX/BgEwykgck=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -59,7 +67,21 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			1H49JQH5teLn/50Yf7ZH4s4/GEJaVdwAUmmgc21od38=
+			5XgskaOgn0X9zmG+4tg2fG/6U5vdzNqza2FVtOI3lcY=
+			</data>
+		</dict>
+		<key>Resources/Stream-demo.bas</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			uN2gG3sgKoED26xPzWDlKTW1qR0mFDAJDi2tHKzpkz8=
+			</data>
+		</dict>
+		<key>Resources/Stream-demo.prg</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			CoDJGgxcKLqKASDO6vkTbMpLTOBOVO0FCG+0hjmHP8w=
 			</data>
 		</dict>
 	</dict>

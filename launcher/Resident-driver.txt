@@ -1,4 +1,4 @@
-MEGA65 DiskLab 0.3.1 (direct-SD reader) — resident read-only file service, ABI 1 (experimental)
+MEGA65 DiskLab (direct-SD reader) — resident read-only file service, ABI 2 (experimental)
 
 What it does
 ------------
@@ -50,6 +50,10 @@ Mailbox at $1E00 (decimal 7680), bank 0:
  offset 17  destination address high (7697)
  offset 18  zero-based file index low (7698)
  offset 19  zero-based file index high (7699)
+ offset 20  destination megabyte for command 8, $80-$86 (7700)
+ offset 21..23  bytes left in the open stream, 24-bit (7701..7703)
+ offset 24  maximum 254-byte blocks per command 8 call, 1-255 (7704)
+ offset 25,26  stream position, internal (7705, 7706)
  offset 32..47 exact 16-byte PETSCII filename, padded with $A0 (7712..7727)
 
 Commands:
@@ -58,11 +62,40 @@ Commands:
  2: Read complete raw file by name to the supplied destination.
  3: Load PRG by name into the supplied bank at its stored two-byte address.
  4: Load PRG by index into the supplied bank at its stored two-byte address.
+ 6: Open a file of any size by index for streaming (offsets 18/19).
+ 7: Open a file of any size by name for streaming (offsets 32..47).
+ 8: Copy the next blocks of the open file to Attic RAM (see Streaming).
 For commands 3/4, the two load-address bytes are skipped. The program is not run.
 For commands 1/2, every byte is copied, including PRG address bytes if present.
 Names are exact and case-sensitive PETSCII bytes; there are no wildcards, path
 prefixes, drive prefixes or ',S' suffix parsing. Index order is the compilation
 file order excluding START, including supporting files omitted from the menu.
+
+Streaming (ABI 2, plain reader only)
+------------------------------------
+Commands 1-4 read whole files of up to 57,344 bytes into chip RAM. Commands
+6-8 let a program keep large data, such as a game's level or graphics pack,
+inside the D65 and pull it into Attic RAM piece by piece:
+
+  open:  name at offsets 32..47 (or index at 18/19), command 7 (or 6), SYS.
+         Offsets 21..23 now hold the file's length in bytes (24-bit).
+  read:  destination at offset 20 (megabyte $80-$86), 15 (bank), 16/17
+         (address); block quota at 24; command 8; SYS. Up to quota blocks
+         of 254 bytes (the last one shorter) are copied. Offsets 30/31 return
+         the bytes copied, 21..23 the bytes left, and the destination at
+         20/15/16/17 is advanced past them, carrying across banks and
+         megabytes. Repeat command 8 until it returns 0 bytes.
+
+Destinations are Attic RAM megabytes $80-$86 only (7 MiB; megabyte $87 holds
+this driver's catalogue and staging). Use DMA to move data on from there.
+Each block is checked like a whole-file read (geometry, SD status, chain
+length against the remaining byte count) but there is no whole-file byte sum;
+blocks already copied stay copied if a later block fails, and the stream
+position is not advanced past a failed block, so command 8 can be repeated.
+One stream is open at a time; commands 1-4 and 0 do not disturb it, opening
+another file replaces it. The LOAD-compatibility reader has no room for
+streaming and refuses commands 6-8 (stage $12). See Stream-demo.bas, which
+streams SPACE.SCP from the image into $8000000 from BASIC.
 
 Results:
  offset 6   status: 0 success, 2 failure (decimal 7686)
@@ -73,12 +106,14 @@ Results:
  offset 12,13 last logical track / sector
 Offsets 0..5 and 64..87 are internal working memory. Optional LOAD compatibility
 also reserves $1E80-$1ED7 and uses private command 5; applications must not use
-that command or change the hook state. Offset 7 is a developer
-D81-control-test flag; keep zero on real D65 images. Clear the mailbox when
-installing. START does this automatically.
+that command or change the hook state. Offset 7 is reserved (it was a developer
+D81-control-test flag in ABI 1). Clear the mailbox when installing. START does
+this automatically. A failed command 0 prints READ FAILED and the six bytes at
+offsets 8..13 in hex (stage, SD status, mount and format flags, track, sector).
 
 Stage $12 = invalid command/catalogue or incompatible file type; $13 = name or
-index not found; $14 = destination out of range. Other stages describe controller,
+index not found; $14 = destination out of range; $15 = stream destination
+outside Attic megabytes $80-$86; $0B with a stream = chain longer than its length. Other stages describe controller,
 chain, length, header or checksum errors (see reader.a).
 
 The entire output must fit within $2000-$F6FF in bank 0 or 1. The caller must
@@ -86,9 +121,9 @@ choose a region that does not overwrite its executing code or live BASIC data.
 Bank 1 contains BASIC arrays and strings: do not use it casually from BASIC.
 Menu programs start at $2001 and can be at most 55,041 file bytes including the
 two-byte load address. Raw output can be at most 55,040 bytes at $2000; less at
-higher destinations. The staging bound is 57,344 file bytes. Larger files can
-be stored and extracted by the desktop app but cannot yet be read in chunks by
-this service; oversized lengths are rejected before staging. No bank wrapping.
+higher destinations. The staging bound is 57,344 file bytes; larger files are
+refused by commands 1-4 before staging and are read with the streaming
+commands instead. No bank wrapping for commands 1-4.
 
 Each nonempty read follows a length-bounded chain, checks geometry and SD
 controller status, and validates the catalogue's 16-bit byte sum before copying
@@ -106,11 +141,15 @@ read after launch. RESMAX.D65 demonstrates a 55,041-byte PRG launch.
 
 Catalogue layout (desktop builder/debug tools)
 ---------------------------------------------
-At $87FE000: ASCII 'D65R', ABI byte 1, file-count low/high, reserved zero.
+At $87FE000: ASCII 'D65R', ABI byte 2, file-count low/high, reserved zero.
 Then up to 295 entries of 24 bytes: raw name[16], track, logical sector,
-file length low/high, byte-sum low/high, file type, original directory flags.
-Lengths beyond 65535 are encoded as $FFFF, an unsupported-size sentinel, never
-truncated modulo 65536. START is excluded. The catalogue is embedded as DATA in
+file length low/high, byte-sum low/high, file type, length bits 16-23.
+Below 64 KiB the last byte is zero. From 64 KiB on, the length field holds
+$FFFF (so whole-file reads refuse the file, never a wrap modulo 65536), the
+byte-sum field holds length bits 0-15 and the last byte bits 16-23. ABI 1
+catalogues kept the original directory flags in the last byte. START carries
+its own reader and catalogue, so an image is always self-consistent;
+DiskLab's Update START moves an older image to the current ABI. START is excluded. The catalogue is embedded as DATA in
 START, so the image remains a single D65 file with no external dependencies.
 
 Validation and remaining limits
@@ -121,11 +160,14 @@ the SD sector buffer at $FFD6E00 and enhanced DMA. It runs 114 cases over the
 full-size fixture (examples/fullsize_fixture.rs: 95 programs plus data filling
 all 21,504 payload blocks, the last file on track 85 sector 242), at four
 different image start sectors including ones that carry into every address
-byte, for both the plain and the LOAD-compatibility reader. The installed Xemu
-cannot mount D65 images, so those tests use modeled SD reads, not Xemu's own
-SD/Hyppo path. The direct-SD reader has not yet been run on physical MEGA65
-hardware; earlier BANK2/EXTRA38 hardware successes were for the F011-based
-reader, not this revision. Images must be contiguous on the SD card, which
+byte, for both the plain and the LOAD-compatibility reader. The harness now also
+models the $D689 buffer select and Attic RAM megabytes $80-$86 and streams
+FILLER (198,000 bytes, a 24-bit length), GAME94 and MESSAGE in 37-block chunks
+across a bank and a megabyte boundary (120 cases for the plain reader). The
+installed Xemu cannot mount D65 images, so those tests use modeled SD reads.
+On a MEGA65 R6 (core 0.97, ROM 920413) the reader has launched a 55,041-byte
+program from logical sectors 128-255 (October 2026); see
+verification/resident-driver-sd/Results.txt for the streaming hardware run. Images must be contiguous on the SD card, which
 Hyppo already requires to mount them at all.
 
 Sources: MEGA65 user guide, memory.tex (utility memory and Attic RAM),

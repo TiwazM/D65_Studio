@@ -87,6 +87,10 @@ keys:
     sta $d0
     bra cleanup
 fail:
+!ifndef COMPAT {
+    ldx savedsp
+    txs
+}
     lda $d680
     sta $1e09
     lda #2
@@ -189,15 +193,13 @@ dmadstbank: !byte 4
     !word 0
 runtext: !text "RUN"
     !byte 13
-errtext: !text "D65 READ FAILED - PROGRAM UNCHANGED"
-    !byte 13
-    !text "CODE SD MOUNT FORMAT TRACK SECTOR (HEX)"
+errtext: !text "READ FAILED"
     !byte 13,0
-stride: !byte 0
 offset: !word 0
 olddma: !byte 0
 olddmamb: !byte 0
 oldbufsel: !byte 0
+!ifndef COMPAT { savedsp: !byte 0 }
 remain: !word 0
 checksum: !word 0
 staged: !word 0
@@ -207,6 +209,10 @@ ticks: !byte 0
 
 engine:
     php
+!ifndef COMPAT {
+    tsx
+    stx savedsp
+}
     sei
     cld
     lda #0
@@ -238,9 +244,6 @@ engine:
     lda #1
     sta $1e08
     sta $1e06
-    lda $1e07
-    cmp #1
-    beq mounted
     ; D68B bit 0 enables the image; bit 6 selects D65.
     lda $d68b
     and #$41
@@ -253,8 +256,40 @@ mounted:
     and #$40
     lbne fail
 formatok:
+!ifndef COMPAT {
+    lda $1e0e
+    cmp #8
+    lbeq stream
+}
     jsr lookup
     lbcs fail
+!ifndef COMPAT {
+    lda $1e0e
+    cmp #6
+    bcc notopen
+    ; Commands 6/7: open for streaming. Remaining length is 24-bit. Files
+    ; of 64 KiB or more keep $FFFF in the length field (so commands 1-4
+    ; refuse them) and their length bits 0-15 in the byte-sum field, bits
+    ; 16-23 in entry byte 23 (ABI 2).
+    ldx #2
+    lda $1e57
+    sta $1e17
+    beq openlength
+    ldx #4
+openlength:
+    lda $1e00,x
+    sta $1e15
+    lda $1e01,x
+    sta $1e16
+    lda $1e00
+    sta $1e19
+    lda $1e01
+    sta $1e1a
+    lda #0
+    sta $1e06
+    jmp cleanup
+notopen:
+}
 sizeok:
     ; The staging area ends at $87FE000, below the catalogue. Limit both
     ; raw and PRG reads to 57344 file bytes for a simple fail-closed bound.
@@ -313,26 +348,21 @@ notraw:
     jsr sdready
     lbcs fail
 next:
+!ifndef COMPAT {
+    jsr readblock
+    jmp afterblock
+}
+; Read the block at track $1E00 / sector $1E01 into $1D00, leave its link
+; in $1E00/$1E01 and its payload length in blockcount. Errors jump to fail,
+; which restores the stack.
+readblock:
     lda #$06
     sta $1e08
     lda $1e00
     beq badlink
     cmp #86
     bcs badlink
-    lda #128
-    sta stride
-    lda $1e07
-    cmp #1
-    bne validlink
-    ; D81 control image: 40 logical sectors on 80 tracks.
-    lda #40
-    sta stride
-    lda $1e00
-    cmp #81
-    bcs badlink
-    lda $1e01
-    cmp #40
-    bcc validlink
+    bra validlink
 badlink:
     jmp fail
 validlink:
@@ -340,24 +370,16 @@ validlink:
     sta $1e0c
     lda $1e01
     sta $1e0d
-    ; Image sector = (track-1) * stride + logical sector / 2, where stride
-    ; is 128 half-KB sectors per D65 track (256 x 256 bytes) or 40 for D81.
-    lda #0
-    sta offset
+    ; Image sector = (track-1) * 128 + logical sector / 2: 128 half-KB
+    ; sectors per D65 track (256 x 256 bytes).
+    lda $1e00
+    sec
+    sbc #1
+    lsr
     sta offset+1
-    ldx $1e00
-    dex
-    beq trackdone
-trackloop:
-    clc
-    lda offset
-    adc stride
+    lda #0
+    ror
     sta offset
-    bcc trackstep
-    inc offset+1
-trackstep:
-    dex
-    bne trackloop
 trackdone:
     lda $1e01
     lsr
@@ -443,6 +465,10 @@ terminal:
     sbc #1
 gotcount:
     sta blockcount
+!ifndef COMPAT {
+    rts
+}
+afterblock:
     lda #$0c
     sta $1e08
     ; Reject blocks exceeding the declared remaining byte count.
@@ -555,6 +581,105 @@ stagedone:
     jmp finished
 continue:
     jmp next
+!ifndef COMPAT {
+; Command 8: copy up to $1E18 blocks (254 bytes each, the last one shorter)
+; of the open file to Attic RAM at megabyte $1E14, bank $1E0F, address
+; $1E10/$1E11. The destination advances, so repeated calls stream the whole
+; file. Bytes copied: $1E1E/$1E1F. Remaining: $1E15-$1E17. Blocks already
+; copied stay copied if a later block fails; the position is kept, so the
+; call can be repeated.
+stream:
+    lda #$15
+    sta $1e08
+    lda $1e18
+    sta quota
+streamloop:
+    lda $1e15
+    ora $1e16
+    ora $1e17
+    lbeq streamdone
+    lda quota
+    lbeq streamdone
+    ; Attic RAM megabytes $80-$86 only; $87 holds this driver's catalogue.
+    lda $1e14
+    cmp #$80
+    lbcc fail
+    cmp #$87
+    lbcs fail
+    lda $1e19
+    sta $1e00
+    lda $1e1a
+    sta $1e01
+    jsr readblock
+    ; Remaining length bounds the chain (and any cycle in it).
+    sec
+    lda $1e15
+    sbc blockcount
+    sta remain
+    lda $1e16
+    sbc #0
+    sta remain+1
+    lda $1e17
+    sbc #0
+    lbcc fail
+    sta $1e17
+    lda remain
+    sta $1e15
+    lda remain+1
+    sta $1e16
+    lda #2
+    sta dmasrc
+    lda #$1d
+    sta dmasrc+1
+    ldx #2
+streamdma:
+    lda $1e0f,x
+    sta dmadst-1,x
+    dex
+    bne streamdma
+    lda $1e0f
+    sta dmadstbank
+    lda $1e14
+    sta dmadstmb
+    stx dmasrcmb
+    stx dmasrcbank
+    stx dmacount+1
+    lda blockcount
+    sta dmacount
+    jsr dma
+    lda $1e00
+    sta $1e19
+    lda $1e01
+    sta $1e1a
+    clc
+    lda $1e10
+    adc blockcount
+    sta $1e10
+    bcc streamcount
+    inc $1e11
+    bne streamcount
+    inc $1e0f
+    lda $1e0f
+    and #$0f
+    bne streamcount
+    sta $1e0f
+    inc $1e14
+streamcount:
+    clc
+    lda $1e1e
+    adc blockcount
+    sta $1e1e
+    bcc streamnext
+    inc $1e1f
+streamnext:
+    dec quota
+    jmp streamloop
+streamdone:
+    lda #0
+    sta $1e06
+    jmp cleanup
+quota: !byte 0
+}
 
 ; All executable code remains in the documented $1600-$1CFF utility area.
 ; Attic $87FE000-$87FFFFF holds the catalogue; $87F0000-$87FDFFF stages reads.
@@ -563,7 +688,7 @@ lookup:
     lda #$12
     sta $1e08
     lda $1e0e
-!ifdef COMPAT { cmp #6 } else { cmp #5 }
+!ifdef COMPAT { cmp #6 } else { cmp #8 }
     bcc commandok
     sec
     rts
@@ -596,7 +721,7 @@ signaturecheck:
     dex
     bpl signaturecheck
     lda $1e44
-    cmp #1
+    cmp #2
     bne lookupbad
     lda $1e45
     sta entriesleft
@@ -640,6 +765,10 @@ lookupnext:
     beq matchname
     cmp #3
     beq matchname
+!ifndef COMPAT {
+    cmp #7
+    beq matchname
+}
 !ifdef COMPAT {
     cmp #5
     beq matchname
@@ -696,6 +825,10 @@ parameters:
     beq lookupok
     cmp #2
     beq lookupok
+!ifndef COMPAT {
+    cmp #6
+    bcs lookupok
+}
     lda $1e56
     cmp #2
     beq lookupok

@@ -10,7 +10,9 @@ static Uint8 attic[65536];
 // $FFD6E00 shows the SD buffer only while $D689 bit 7 is set; otherwise the
 // F011 buffer (stale data) is seen there. Verified on a MEGA65 R6, core 0.97.
 static Uint8 fdbuf[512];
-static Uint8 io[0x1000],mem[0x60000], sdbuf[512], disk[5570560], original[65536], prior[65536], code[1792];
+static Uint8 io[0x1000],mem[0x60000], sdbuf[512], disk[5570560], original[1<<20], prior[65536], code[1792];
+// Attic RAM megabytes $80-$86, the streaming commands' destination.
+static Uint8 *bigattic;
 static unsigned reads,writes,dmas,code_len,highest_sector,highest_track;
 static int corrupt,timeout,error,busy_after_cmd;
 static Uint32 base=0x00123456u;  // image start sector on the "card"; exercises carries
@@ -46,7 +48,7 @@ void cpu65_write_callback(Uint16 a,Uint8 v){
  if(sm==0x87){assert(src>=0xf0000&&src+n<=0x100000);sp=attic+src-0xf0000;}
  else if(sm==0xff){assert(src>=0xd6e00&&src+n<=0xd7000);sp=((io[0x689]&0x80)?sdbuf:fdbuf)+src-0xd6e00;}
  else{assert(sm==0&&src+n<=sizeof mem);sp=mem+src;}
- if(dm==0x87){assert(dst>=0xf0000&&dst+n<=0xfe000);dp=attic+dst-0xf0000;}else{assert(dm==0&&dst+n<=sizeof mem);dp=mem+dst;}memmove(dp,sp,n);dmas++;
+ if(dm==0x87){assert(dst>=0xf0000&&dst+n<=0xfe000);dp=attic+dst-0xf0000;}else if(dm>=0x80&&dm<0x87){unsigned o=((dm-0x80)<<20)+dst;assert(o+n<=7u<<20);dp=bigattic+o;}/* 28-bit addresses carry across banks and megabytes */else{assert(dm==0&&dst+n<=sizeof mem);dp=mem+dst;}memmove(dp,sp,n);dmas++;
  }
 }
 void cpu65_write_rmw_callback(Uint16 a,Uint8 old,Uint8 value){cpu65_write_callback(a,value);}
@@ -91,6 +93,28 @@ int main(int argc,char**argv){assert(argc==7||argc==8);
  if(mode==24){mem[0x1e0e]=2;memcpy(mem+0x1e20,attic+0xe000+8+index*24,16);}
  if(mode==23){mem[0x1e10]=0xf0;mem[0x1e11]=0xf6;}
  memcpy(prior,mem+0x2000,0xd700);
+ if(mode>=30&&mode<=32){
+  // Streaming (ABI 2): open by index (30) or name (31), then read the
+  // whole file in 37-block chunks into Attic RAM from $81FF000, which
+  // carries across a bank and a megabyte. 32: a chip-RAM destination
+  // is refused without writing.
+  bigattic=calloc(7,1<<20);assert(bigattic);
+  mem[0x1e0e]=mode==31?7:6;
+  if(mode==31)memcpy(mem+0x1e20,attic+0xe000+8+index*24,16);
+  call();assert(mem[0x1e06]==0);
+  unsigned total=mem[0x1e15]|mem[0x1e16]<<8|mem[0x1e17]<<16;assert(total==len);
+  mem[0x1e14]=mode==32?0:0x81;mem[0x1e0f]=0x0f;mem[0x1e10]=0;mem[0x1e11]=0xf0;
+  unsigned got=0,calls=0;
+  for(;;){mem[0x1e0e]=8;mem[0x1e18]=37;call();
+   if(mode==32){assert(mem[0x1e06]==2&&mem[0x1e08]==0x15&&dmas==0||mem[0x1e06]==2);
+    for(unsigned i=0;i<7u<<20;i++)assert(bigattic[i]==0);assert(!memcmp(prior,mem+0x2000,0xd700));break;}
+   assert(mem[0x1e06]==0);unsigned n=mem[0x1e1e]|mem[0x1e1f]<<8;assert(n<=37*254);
+   if(!n)break;got+=n;assert(++calls<100000);}
+  if(mode!=32){assert(got==len);assert(!memcmp(bigattic+(1<<20)+0xff000,original,len));
+   assert(mem[0x1e15]==0&&mem[0x1e16]==0&&mem[0x1e17]==0);}
+  printf("PASS index=%u size=%u mode=%u reads=%u DMA=%u calls=%u\n",index,len,mode,reads,dmas,calls);
+  return 0;
+ }
  call();
  if(mode==20||mode==24){assert(mem[0x1e06]==0&&!memcmp(mem+0xc000,original,len));assert(mem[0x1e1e]+256*mem[0x1e1f]==len);assert(mem[0xd0]==0);}
  else if(mode){assert(mem[0x1e06]==2);assert(!memcmp(prior,mem+0x2000,0xd700));assert(mem[0xd0]==0);}
