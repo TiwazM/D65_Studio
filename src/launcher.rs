@@ -155,7 +155,20 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
     disk.put("START", 2, &placeholder, false)?;
     let start = disk.entries()?.remove(0);
     let start_chain = disk.chain(&start)?;
-    let occupied: std::collections::HashSet<_> = start_chain.iter().copied().collect();
+    let mut occupied: std::collections::HashSet<_> = start_chain.iter().copied().collect();
+    // AUTOBOOT.C65 is loaded by the ROM, so like START it must sit on the
+    // DOS-allocated sectors 0..39 rather than wherever the packer puts files.
+    let mut autoboot_chain = Vec::new();
+    if let Some((_, data)) = files.iter().find(|(e, _)| e.name == AUTOBOOT) {
+        disk.put(AUTOBOOT, 2, data, false)?;
+        let e = disk
+            .entries()?
+            .into_iter()
+            .find(|e| e.name == AUTOBOOT)
+            .ok_or("AUTOBOOT.C65 allocation failed.")?;
+        autoboot_chain = disk.chain(&e)?;
+        occupied.extend(autoboot_chain.iter().copied());
+    }
     // Fill 40-sector groups across all tracks in turn, so the ROM-readable
     // sectors 0..39 are used first and small compilations stay D81-shaped.
     let mut free = Vec::new();
@@ -171,9 +184,13 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
             }
         }
     }
-    debug_assert_eq!(free.len() + start_chain.len(), crate::disk::PAYLOAD_BLOCKS);
+    debug_assert_eq!(
+        free.len() + start_chain.len() + autoboot_chain.len(),
+        crate::disk::PAYLOAD_BLOCKS
+    );
     let needed: usize = files
         .iter()
+        .filter(|(e, _)| e.name != AUTOBOOT)
         .map(|(_, d)| d.len().div_ceil(254).max(1))
         .sum();
     if needed > free.len() {
@@ -183,9 +200,14 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
     let mut cursor = 0;
     for (index, (entry, data)) in files.iter().enumerate() {
         let blocks = data.len().div_ceil(254).max(1);
-        let chain = &free[cursor..cursor + blocks];
-        cursor += blocks;
-        write_chain(&mut disk, chain, data)?;
+        let chain: &[(u8, u8)] = if entry.name == AUTOBOOT {
+            &autoboot_chain
+        } else {
+            let chain = &free[cursor..cursor + blocks];
+            cursor += blocks;
+            write_chain(&mut disk, chain, data)?;
+            chain
+        };
         let mut slot = vec![0; 30];
         slot[0] = entry.flags;
         slot[1] = chain[0].0;
@@ -1046,6 +1068,20 @@ mod editable_tests {
         let start = disk.read(&es[0]).unwrap();
         assert!(start.windows(4).any(|b| b == b"GAME"));
         assert!(!start.windows(8).any(|b| b == b"AUTOBOOT"));
+        // The ROM loads it, so it must stay on sectors the ROM can read, even
+        // on a full disk where ordinary files spill into the high sectors.
+        disk.put("BIG", 1, &vec![0x11; 5_000_000], false).unwrap();
+        let es = disk.entries().unwrap();
+        let boot = es.iter().find(|e| e.name == AUTOBOOT).unwrap();
+        assert!(disk
+            .chain(boot)
+            .unwrap()
+            .iter()
+            .all(|(t, s)| *t != 40 && *s < 40));
+        assert_eq!(disk.read(boot).unwrap(), autoboot_program());
+        assert!(disk.chain(&es[0]).unwrap().iter().all(|(_, s)| *s < 40));
+        disk.remove(es.iter().find(|e| e.name == "BIG").unwrap())
+            .unwrap();
         set_autoboot(&mut disk, true).unwrap();
         assert_eq!(disk.entries().unwrap().len(), 3);
         set_autoboot(&mut disk, false).unwrap();
