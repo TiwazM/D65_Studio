@@ -104,7 +104,7 @@ mega65-disklab send GAME.d65 GAME.D65 --mount
 mega65-disklab send GAME.d65 GAME.D65 --ethernet
 ```
 
-`--serial PORT`, `--ethernet IPV6` and `--tool PATH` pick the port, address and program explicitly. **File › Preferences…** stores the paths of `m65rs` and `mega65_ftp` when they are not found automatically (PATH, MEGA65 Studio, M65Connect, or the `D65_M65RS` / `D65_MEGA65_FTP` variables). When both tools are present the image is written with `mega65_ftp`, which allocates one run, and the cluster chain is read back with `m65rs`; `m65rs` on its own takes free clusters one at a time and may fragment the file, in which case the transfer deletes it again and says so. The direct SD-card export below remains available when no MEGA65 is connected.
+`--serial PORT`, `--ethernet IPV6` and `--tool PATH` pick the port, address and program explicitly. **File › Preferences…** stores the paths of `m65rs` and `mega65_ftp` when they are not found automatically (PATH, MEGA65 Studio, M65Connect, or the `D65_M65RS` / `D65_MEGA65_FTP` variables). Both tools allocate one contiguous run (`m65rs` from its 18 October 2026 build on; an older `m65rs` fragments, which the read-back catches). Over the JTAG port `m65rs` is preferred because it also reads the chain back; Ethernet needs `mega65_ftp`. A fragmented result is deleted again and reported. Both paths were tested on a MEGA65 R6 with a full-size image: one run, mounted, last menu entry ran from the high sectors. The direct SD-card export below remains available when no MEGA65 is connected.
 
 ## SD-card export: caution
 

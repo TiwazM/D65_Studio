@@ -140,13 +140,18 @@ pub struct Plan {
     pub steps: Vec<Step>,
     pub on_fragmented: Vec<Step>,
 }
-/// The transfer tool to write with: mega65_ftp searches for one free run of
-/// the right length before writing, m65rs takes free clusters one at a time.
+/// The transfer tool to write with. Both allocate one contiguous run (m65rs
+/// since its 2026-10-18 build; older m65rs builds fragment, which the chain
+/// read-back catches). Over the JTAG port m65rs is preferred because it also
+/// verifies the chain; Ethernet needs mega65_ftp.
 pub fn preferred(tools: &[Tool], ethernet: bool) -> Option<&Tool> {
+    if ethernet {
+        return tools.iter().find(|t| t.supports_ethernet());
+    }
     tools
         .iter()
-        .find(|t| t.kind == Kind::Mega65Ftp)
-        .or_else(|| tools.iter().find(|t| !ethernet || t.supports_ethernet()))
+        .find(|t| t.kind == Kind::M65rs)
+        .or_else(|| tools.first())
 }
 
 /// Upload `image` as `name` in the card's root folder with `writer`, read the
@@ -510,8 +515,9 @@ mod tests {
         assert_eq!(p.steps[2].args[n - 3], "mount GAME.D65");
         let n = p.on_fragmented[0].args.len();
         assert_eq!(p.on_fragmented[0].args[n - 3], "del GAME.D65");
-        assert_eq!(preferred(&[rs.clone(), ftp.clone()], false), Some(&ftp));
-        assert_eq!(preferred(&[rs.clone()], false), Some(&rs));
+        assert_eq!(preferred(&[ftp.clone(), rs.clone()], false), Some(&rs));
+        assert_eq!(preferred(&[ftp.clone()], false), Some(&ftp));
+        assert_eq!(preferred(&[rs.clone(), ftp.clone()], true), Some(&ftp));
         assert_eq!(preferred(&[rs.clone()], true), None);
     }
     #[test]

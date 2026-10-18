@@ -1448,7 +1448,7 @@ impl eframe::App for Studio {
                         }
                     });
                 }
-                ui.label(RichText::new("mega65_ftp writes the image in one run; m65rs takes free clusters one at a time and can fragment it (a fragmented result is deleted again). When both are installed the chain is read back with m65rs.").small().color(Color32::GRAY));
+                ui.label(RichText::new("Both tools write the image in one contiguous run (m65rs from its October 2026 build on). The chain is read back with m65rs afterwards; a fragmented result is deleted again and reported.").small().color(Color32::GRAY));
                 let ethernet_ok = self.send_tool.as_ref().is_some_and(|t| t.supports_ethernet());
                 if !ethernet_ok { self.send_ethernet = false; }
                 ui.horizontal(|ui| {
