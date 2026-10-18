@@ -266,6 +266,18 @@ pub fn parse_chain(text: &str) -> Option<Vec<u32>> {
 pub fn contiguous(chain: &[u32]) -> bool {
     !chain.is_empty() && chain.windows(2).all(|w| w[1] == w[0] + 1)
 }
+/// A cluster listing shortened to its count and first cluster; other lines
+/// are cut to one screen line, so dialogs never fill with numbers.
+fn brief(line: &str) -> String {
+    if let Some(chain) = line
+        .contains("clusters: [")
+        .then(|| parse_chain(line))
+        .flatten()
+    {
+        return format!("{} clusters from {}", chain.len(), chain[0]);
+    }
+    line.chars().take(160).collect()
+}
 fn runs(chain: &[u32]) -> usize {
     1 + chain.windows(2).filter(|w| w[1] != w[0] + 1).count()
 }
@@ -307,7 +319,7 @@ pub fn run(plan: &Plan, mut progress: impl FnMut(&str)) -> Result<String> {
                     .trim()
                     .to_string();
                 if !line.is_empty() {
-                    progress(&line);
+                    progress(&brief(&line));
                 }
                 line_start += i + 1;
             }
@@ -321,7 +333,12 @@ pub fn run(plan: &Plan, mut progress: impl FnMut(&str)) -> Result<String> {
         {
             progress(line);
         }
-        let stdout = String::from_utf8_lossy(&text).to_string();
+        let raw = String::from_utf8_lossy(&text).to_string();
+        let stdout = raw
+            .split(['\n', '\r'])
+            .map(brief)
+            .collect::<Vec<_>>()
+            .join("\n");
         log.push_str(&stdout);
         log.push_str(&errors);
         if !status.success() {
@@ -342,7 +359,7 @@ pub fn run(plan: &Plan, mut progress: impl FnMut(&str)) -> Result<String> {
             return Err(format!("{} failed ({status}): {tail}", step.label));
         }
         if step.label == "clusters" {
-            let chain = parse_chain(&stdout).ok_or(
+            let chain = parse_chain(&raw).ok_or(
                 "Could not read the cluster chain back; check the file with m65rs sd clusters.",
             )?;
             if !contiguous(&chain) {
@@ -393,7 +410,7 @@ pub fn run(plan: &Plan, mut progress: impl FnMut(&str)) -> Result<String> {
     Ok(tail
         .iter()
         .rev()
-        .take(12)
+        .take(6)
         .rev()
         .copied()
         .collect::<Vec<_>>()
@@ -531,6 +548,9 @@ mod tests {
             Some(vec![5, 6, 7])
         );
         assert_eq!(parse_chain("nothing"), None);
+        assert_eq!(brief("1360 clusters: [1, 2, 3]"), "3 clusters from 1");
+        assert_eq!(brief("put 5 bytes"), "put 5 bytes");
+        assert_eq!(brief(&"x".repeat(300)).len(), 160);
         assert!(contiguous(&[5, 6, 7]));
         assert!(!contiguous(&[5, 7, 8]));
         assert!(!contiguous(&[]));

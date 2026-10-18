@@ -770,8 +770,9 @@ impl eframe::App for Studio {
             match r {
                 Ok(tail) => {
                     self.report(Ok(()), "Image sent to the MEGA65's SD card.");
-                    self.send_result =
-                        Some(format!("Image sent to the MEGA65's SD card.\n\n{tail}"));
+                    self.send_result = Some(format!(
+                        "Transfer OK: image sent to the MEGA65's SD card.\n\n{tail}"
+                    ));
                 }
                 Err(e) => {
                     self.report(Err(e.clone()), "");
@@ -803,7 +804,10 @@ impl eframe::App for Studio {
                 .collapsible(false)
                 .default_width(560.0)
                 .show(ctx, |ui| {
-                    ui.monospace(message);
+                    egui::ScrollArea::vertical()
+                        .max_height(240.0)
+                        .show(ui, |ui| ui.monospace(message));
+                    ui.add_space(6.0);
                     if ui.button("OK").clicked() {
                         self.send_result = None;
                     }
