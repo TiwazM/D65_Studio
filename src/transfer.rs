@@ -166,6 +166,19 @@ pub fn plan(
     name: &str,
     mount: bool,
 ) -> Result<Plan> {
+    plan_with(writer, tools, link, image, name, mount, false)
+}
+/// `plan`, optionally typing RUN"START" on the MEGA65 once the image is
+/// mounted (m65rs over the JTAG port stuffs the keyboard buffer).
+pub fn plan_with(
+    writer: &Tool,
+    tools: &[Tool],
+    link: &Link,
+    image: &Path,
+    name: &str,
+    mount: bool,
+    run_start: bool,
+) -> Result<Plan> {
     fat_export::short_name(name)?;
     let image = image.to_string_lossy().into_owned();
     let serial = match link {
@@ -249,6 +262,15 @@ pub fn plan(
             }
         }
     }
+    if run_start {
+        if !mount {
+            return Err("RUN\"START\" needs the image mounted first; tick mount as well.".into());
+        }
+        let Some(t) = m65rs.filter(|_| serial.is_some()) else {
+            return Err("Typing RUN\"START\" on the MEGA65 needs m65rs over the JTAG port.".into());
+        };
+        steps.push(rs(t, "run", &["type", "--buffer", "-r", "RUN\"START\""]));
+    }
     Ok(Plan {
         steps,
         on_fragmented,
@@ -287,6 +309,11 @@ fn runs(chain: &[u32]) -> usize {
 pub fn run(plan: &Plan, mut progress: impl FnMut(&str)) -> Result<String> {
     let mut log = String::new();
     for step in &plan.steps {
+        if step.label == "run" {
+            // The MEGA65 has just been reset by the previous step; let BASIC come up.
+            progress("Waiting for the MEGA65 to reach READY…");
+            std::thread::sleep(std::time::Duration::from_secs(6));
+        }
         progress(&format!("{}: {}…", step.label, step.program.display()));
         let mut child = Command::new(&step.program)
             .args(&step.args)
@@ -481,6 +508,42 @@ mod tests {
             ]
         );
         assert!(plan(&rs, &[], &Link::Ethernet(None), img, "GAME.D65", false).is_err());
+        let p = plan_with(
+            &ftp,
+            &[rs.clone(), ftp.clone()],
+            &Link::Serial(None),
+            img,
+            "GAME.D65",
+            true,
+            true,
+        )
+        .unwrap();
+        assert_eq!(p.steps.last().unwrap().label, "run");
+        assert_eq!(
+            p.steps.last().unwrap().args,
+            ["type", "--buffer", "-r", "RUN\"START\""]
+        );
+        assert_eq!(p.steps.last().unwrap().program, rs.path);
+        assert!(plan_with(
+            &rs,
+            &[rs.clone()],
+            &Link::Serial(None),
+            img,
+            "GAME.D65",
+            false,
+            true
+        )
+        .is_err());
+        assert!(plan_with(
+            &ftp,
+            &[ftp.clone()],
+            &Link::Serial(Some("COM3".into())),
+            img,
+            "GAME.D65",
+            true,
+            true
+        )
+        .is_err());
         assert!(plan(&rs, &[], &Link::Serial(None), img, "game.d65", false).is_err());
         // mega65_ftp alone: one invocation does everything.
         let p = plan(

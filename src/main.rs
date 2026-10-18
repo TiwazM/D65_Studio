@@ -134,6 +134,7 @@ struct Studio {
     send_address: String,
     send_name: String,
     send_mount: bool,
+    send_run: bool,
     send_task: Option<std::thread::JoinHandle<Result<String>>>,
     send_progress: Arc<Mutex<Vec<String>>>,
     send_started: Option<std::time::Instant>,
@@ -185,6 +186,7 @@ impl Default for Studio {
             send_address: String::new(),
             send_name: String::new(),
             send_mount: true,
+            send_run: false,
             send_task: None,
             send_progress: Arc::new(Mutex::new(Vec::new())),
             send_started: None,
@@ -341,13 +343,14 @@ impl Studio {
             Link::Serial((!blank(&self.send_device)).then(|| self.send_device.clone()))
         };
         let name = self.send_name.trim().to_ascii_uppercase();
-        let steps = match transfer::plan(
+        let steps = match transfer::plan_with(
             &tool,
             &self.send_tools,
             &link,
             &path,
             &name,
             self.send_mount,
+            self.send_mount && self.send_run,
         ) {
             Ok(s) => s,
             Err(e) => {
@@ -1484,6 +1487,7 @@ impl eframe::App for Studio {
                 ui.label("Filename on the card (8 characters, .D65 or .D81)");
                 ui.add(egui::TextEdit::singleline(&mut self.send_name).char_limit(12).desired_width(200.0));
                 ui.checkbox(&mut self.send_mount, "Ask the MEGA65 to mount it as drive 8 afterwards");
+                ui.add_enabled(self.send_mount, egui::Checkbox::new(&mut self.send_run, "then type RUN\"START\" on the MEGA65 (needs m65rs over JTAG)"));
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     if ui.add_enabled(self.send_tool.is_some(), egui::Button::new("Send")).clicked() { self.start_send(); }
@@ -1547,10 +1551,10 @@ fn cli(args: &[String]) -> Result<()> {
         Some("create") if args.len()==4&&args[1].eq_ignore_ascii_case("d65big")=>{Store::create(Path::new(&args[2]),mega65_disklab::launcher::create_editable(&args[3],"65")?)?;println!("Large D65 with START resident reader created. Use add to put files on it; START is rebuilt each time.");},
         Some("send") if args.len()>=3=>{
             let image=fs::canonicalize(&args[1]).map_err(|e|e.to_string())?;Disk::parse(fs::read(&image).map_err(|e|e.to_string())?)?;
-            let name=args[2].to_ascii_uppercase();let (mut link,mut mount,mut tool)=(Link::Serial(None),false,None);let mut i=3;
-            while i<args.len(){let next=args.get(i+1).filter(|a|!a.starts_with("--")).cloned();match args[i].as_str(){"--mount"=>mount=true,"--ethernet"=>{if next.is_some(){i+=1}link=Link::Ethernet(next)},"--serial"=>{if next.is_some(){i+=1}link=Link::Serial(next)},"--tool"=>{tool=next.ok_or("--tool needs a path")?.into();i+=1},o=>return Err(format!("Unknown option {o}"))}i+=1}
+            let name=args[2].to_ascii_uppercase();let (mut link,mut mount,mut run,mut tool)=(Link::Serial(None),false,false,None);let mut i=3;
+            while i<args.len(){let next=args.get(i+1).filter(|a|!a.starts_with("--")).cloned();match args[i].as_str(){"--mount"=>mount=true,"--run"=>{mount=true;run=true},"--ethernet"=>{if next.is_some(){i+=1}link=Link::Ethernet(next)},"--serial"=>{if next.is_some(){i+=1}link=Link::Serial(next)},"--tool"=>{tool=next.ok_or("--tool needs a path")?.into();i+=1},o=>return Err(format!("Unknown option {o}"))}i+=1}
             let tool=match tool{Some(p)=>{let p=PathBuf::from(p);Tool{kind:if p.file_name().unwrap_or_default().to_string_lossy().contains("ftp"){transfer::Kind::Mega65Ftp}else{transfer::Kind::M65rs},path:p}},None=>transfer::preferred(&transfer::find_tools_with(&tool_overrides(&load_settings())),matches!(link,Link::Ethernet(_))).cloned().ok_or("No transfer tool found. Install MEGA65 Studio (m65rs) or M65Connect (mega65_ftp), or pass --tool PATH.")?};
-            let tools=transfer::find_tools_with(&tool_overrides(&load_settings()));let steps=transfer::plan(&tool,&tools,&link,&image,&name,mount)?;let tail=transfer::run(&steps,|l|println!("{l}"))?;println!("Sent {name} to the MEGA65's SD card with {}.\n{tail}",tool.name());},
+            let tools=transfer::find_tools_with(&tool_overrides(&load_settings()));let steps=transfer::plan_with(&tool,&tools,&link,&image,&name,mount,run)?;let tail=transfer::run(&steps,|l|println!("{l}"))?;println!("Sent {name} to the MEGA65's SD card with {}.\n{tail}",tool.name());},
         Some("update-start") if args.len()==2=>{let mut s=Store::open(Path::new(&args[1]))?;if !mega65_disklab::launcher::start_outdated(&s.disk)?{println!("START is already current.");}else{s.change(|d|mega65_disklab::launcher::update_start(d))?;println!("START replaced with the current reader and menu. Files are unchanged; a backup was kept beside the image.");}},
         Some("create") if args.len()==4=>{let format=if args[1].eq_ignore_ascii_case("d81"){Format::D81}else if args[1].eq_ignore_ascii_case("d65"){Format::D65}else{return Err("Format must be d65 or d81".into())};Store::create(Path::new(&args[2]),Disk::create(format,&args[3],"65")?)?;},
         Some("list") if args.len()==2=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;println!("{} [{}] {} bytes",d.label(),d.disk_id(),d.bytes.len());for e in d.entries()?{println!("{:5} {:16} {}",e.blocks,e.name,e.type_name())}match d.resident_space().filter(|_|mega65_disklab::launcher::is_editable(&d)){Some((used,total))=>{println!("{} blocks free (resident reader, START included)",total-used);println!("START {}",if mega65_disklab::launcher::start_outdated(&d)?{"is older than this version of MEGA65 DiskLab: run update-start"}else{"is current"});}None=>{println!("{} blocks free",d.free_blocks());d.validate_writable()?;}}},
@@ -1566,7 +1570,7 @@ fn cli(args: &[String]) -> Result<()> {
         Some("serve") if args.len()==2=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let b=mega65_disklab::mount::bridge(s,false)?;println!("{}",b.url);loop{std::thread::sleep(std::time::Duration::from_secs(1));}},
         #[cfg(any(target_os="macos", windows))]
         Some("mount") if args.len()==3||args.len()==4=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let ro=args.get(3).map(String::as_str)==Some("--read-only");mega65_disklab::mount::start(s,Path::new(&args[2]),ro)?.join().map_err(|_|"Mount worker panicked")??;},
-        _=>return Err("Usage: mega65-disklab [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | update-start IMAGE | send IMAGE NAME.D65 [--serial [PORT] | --ethernet [IPV6]] [--mount] [--tool PATH] | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
+        _=>return Err("Usage: mega65-disklab [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | update-start IMAGE | send IMAGE NAME.D65 [--serial [PORT] | --ethernet [IPV6]] [--mount] [--run] [--tool PATH] | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
     }
     Ok(())
 }
