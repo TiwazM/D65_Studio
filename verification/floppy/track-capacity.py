@@ -60,6 +60,9 @@ if args.dry_run:
     sys.exit(0)
 
 poke(0x6A1, 0x01)          # use the real drive for drive 0
+# $FFD6C00 must show the floppy buffer, not the SD buffer ($D689 bit 7 clear);
+# m65rs' SD commands leave the bit set.
+poke(0x689, peek(0x689) & 0x7F)
 poke(0x696, 0x00)          # no auto track seeking
 poke(0x080, 0x68)          # motor on, side 0
 time.sleep(1.0)            # spin up
@@ -116,7 +119,7 @@ for setting in args.settings.split(","):
     poke(0x6A2, rate)
     time.sleep(0.4)
     tib = dict(track=peek(0x6A6), rate=peek(0x6A7), enc=peek(0x6A8), sectors=peek(0x6A9))
-    good, bad = 0, []
+    good, bad, crc, missing = 0, [], [], []
     for s in range(1, 65):
         poke(0x081, 0x00)
         poke(0x084, args.track)
@@ -128,9 +131,12 @@ for setting in args.settings.split(","):
         ok_cmd = wait_idle(timeout=2.0)
         st = status()
         if not ok_cmd or st["rnf"]:
-            break                           # first missing sector ends the track
+            missing.append(s)
+            if len(missing) >= 6 and missing[-6:] == list(range(s - 5, s + 1)):
+                break                       # six missing in a row: end of track
+            continue
         if st["crc"]:
-            bad.append(s)
+            crc.append(s)
             continue
         data = bytes.fromhex("".join(
             line.split(":")[1].split("  ")[0].replace(" ", "")
@@ -139,11 +145,11 @@ for setting in args.settings.split(","):
             good += 1
         else:
             bad.append(s)
-    last = s - 1
+    last = max([x for x in range(1, s + 1) if x not in missing] or [0])
     bpt = good * 512
     results.append((enc, rate, tib, last, good, bad))
     print(f"{enc} rate {rate:2d}: TIB {tib} | sectors found {last}, good {good}, "
-          f"bad {bad or '-'} | {bpt} bytes/track side | x83x2 = {bpt * 166 / 1e6:.2f} MB")
+          f"wrong data {bad or '-'}, CRC errors {crc or '-'}, not found {[m for m in missing if m < last] or '-'} | {bpt} bytes/track side | x83x2 = {bpt * 166 / 1e6:.2f} MB")
 
 poke(0x080, 0x00)  # motor off
 print("\nsummary")
