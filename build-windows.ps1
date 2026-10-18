@@ -15,7 +15,7 @@ try {
     if (Test-Path -LiteralPath $releasePath) { throw "Output already exists: $releasePath. Choose a fresh output directory." }
     New-Item -ItemType Directory -Path $releasePath -Force | Out-Null
     Copy-Item -LiteralPath 'target/x86_64-pc-windows-msvc/release/mega65-disklab.exe' -Destination $releasePath
-    foreach ($file in @('WINDOWS.txt', 'README.md', 'FORMAT.md', 'LICENSE')) { Copy-Item -LiteralPath $file -Destination $releasePath }
+    foreach ($file in @('WINDOWS.txt', 'README.md', 'LICENSE')) { Copy-Item -LiteralPath $file -Destination $releasePath }
     New-Item -ItemType Directory -Path (Join-Path $releasePath 'launcher'), (Join-Path $releasePath 'Samples'), (Join-Path $releasePath 'verification') | Out-Null
     foreach ($file in @('Resident-driver.txt', 'LOAD-compatibility.txt')) { Copy-Item -LiteralPath (Join-Path 'launcher' $file) -Destination (Join-Path $releasePath 'launcher') }
     foreach ($file in @('TEST-D65.d65', 'TEST-D81.d81', 'HELLO.prg', 'HOOKBAS.D65', 'HOOKTEST.D65', 'RESDRV.D65', 'RESMAX.D65', 'RESCAP.D65')) { Copy-Item -LiteralPath (Join-Path 'Images' $file) -Destination (Join-Path $releasePath 'Samples') }
