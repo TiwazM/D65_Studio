@@ -169,12 +169,13 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
         autoboot_chain = disk.chain(&e)?;
         occupied.extend(autoboot_chain.iter().copied());
     }
-    // Fill 40-sector groups across all tracks in turn, so the ROM-readable
-    // sectors 0..39 are used first and small compilations stay D81-shaped.
+    // Fill the D81-shaped area first (tracks 1..80, sectors 0..39, which the
+    // ROM can load from), then the rest of each 40-sector group across all
+    // tracks, so small compilations stay D81-shaped.
     let mut free = Vec::new();
     for group in (0..256).step_by(40) {
         for t in 1..=85 {
-            if t == 40 {
+            if t == 40 || (group == 0 && t > 80) {
                 continue;
             }
             for s in group..(group + 40).min(256) {
@@ -182,6 +183,30 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
                     free.push((t, s as u8));
                 }
             }
+        }
+    }
+    for t in 81..=85 {
+        for s in 0..40u8 {
+            if !occupied.contains(&(t, s)) {
+                free.push((t, s));
+            }
+        }
+    }
+    // Hidden files are usually helpers a program loads by itself through the
+    // ROM, so they take the ROM-readable blocks before anything else.
+    let mut chains: Vec<Vec<(u8, u8)>> = vec![Vec::new(); files.len()];
+    let mut cursor = 0;
+    for hidden_pass in [true, false] {
+        for (index, (entry, data)) in files.iter().enumerate() {
+            if entry.hidden != hidden_pass || entry.name == AUTOBOOT {
+                continue;
+            }
+            let blocks = data.len().div_ceil(254).max(1);
+            if cursor + blocks > free.len() {
+                break;
+            }
+            chains[index] = free[cursor..cursor + blocks].to_vec();
+            cursor += blocks;
         }
     }
     debug_assert_eq!(
@@ -197,16 +222,13 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
         return Err(format!("These files exceed the launch disk capacity: {} blocks needed, {} available after START (about 5.4 MB before START).", needed, free.len()));
     }
     let mut slots = vec![disk.bytes[start.offset + 2..start.offset + 32].to_vec()];
-    let mut cursor = 0;
     for (index, (entry, data)) in files.iter().enumerate() {
         let blocks = data.len().div_ceil(254).max(1);
         let chain: &[(u8, u8)] = if entry.name == AUTOBOOT {
             &autoboot_chain
         } else {
-            let chain = &free[cursor..cursor + blocks];
-            cursor += blocks;
-            write_chain(&mut disk, chain, data)?;
-            chain
+            write_chain(&mut disk, &chains[index], data)?;
+            &chains[index]
         };
         let mut slot = vec![0; 30];
         slot[0] = entry.flags;
@@ -1138,6 +1160,28 @@ mod editable_tests {
             .any(|b| b == b"TOOL"));
         let start = disk.entries().unwrap()[0].clone();
         assert!(set_hidden(&mut disk, &start, true).is_err());
+        // A hidden helper is loaded by the program through the ROM, so it
+        // stays on D81-shaped blocks even when the disk is nearly full.
+        disk.put("FILL", 1, &vec![0x22; 5_200_000], false).unwrap();
+        let helper = disk
+            .entries()
+            .unwrap()
+            .into_iter()
+            .find(|e| e.name == "TOOL")
+            .unwrap();
+        set_hidden(&mut disk, &helper, true).unwrap();
+        let helper = disk
+            .entries()
+            .unwrap()
+            .into_iter()
+            .find(|e| e.name == "TOOL")
+            .unwrap();
+        assert!(disk
+            .chain(&helper)
+            .unwrap()
+            .iter()
+            .all(|(t, s)| (1..=80).contains(t) && *t != 40 && *s < 40));
+        assert_eq!(disk.read(&helper).unwrap(), PROGRAM);
     }
     #[test]
     fn store_edits_and_reopens_large_disk() {
