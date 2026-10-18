@@ -238,7 +238,7 @@ fn host_files_map_to_names_and_types() {
         ("SPACE_COMMANDER_".into(), 2)
     );
     assert_eq!(
-        import_name(Path::new("a:b\"c\"é.dat")).unwrap(),
+        import_name(Path::new("a,b\"c\"é.dat")).unwrap(),
         ("A-B-C-\u{2d}.DAT".replace("\u{2d}", "-").into(), 2)
     );
     assert!(import_name(Path::new("game.d81")).is_err());
