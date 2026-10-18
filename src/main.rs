@@ -1213,6 +1213,34 @@ impl eframe::App for Studio {
                             {
                                 self.delete_open = true;
                             }
+                            if big
+                                && ui
+                                    .add_enabled(
+                                        can_edit,
+                                        egui::Button::new(if e.hidden {
+                                            "Show in START"
+                                        } else {
+                                            "Hide from START"
+                                        }),
+                                    )
+                                    .on_hover_text(
+                                        "The file stays on the disk and readable; only the START menu changes.",
+                                    )
+                                    .clicked()
+                            {
+                                let hide = !e.hidden;
+                                let r = self.store.as_ref().unwrap().lock().unwrap().change(|d| {
+                                    mega65_disklab::launcher::set_hidden(d, e, hide)
+                                });
+                                self.report(
+                                    r,
+                                    if hide {
+                                        "Hidden from the START menu."
+                                    } else {
+                                        "Shown in the START menu again."
+                                    },
+                                );
+                            }
                         });
                         ui.horizontal(|ui| {
                             ui.add_enabled(
