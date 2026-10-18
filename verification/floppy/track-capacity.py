@@ -95,8 +95,11 @@ for setting in args.settings.split(","):
     poke(0x081, 0xA0)                     # hardware format, with gaps, no precomp
     if not wait_idle(timeout=5.0):
         sys.exit("Format did not finish.")
-    # Read back with rate and encoding taken from the Track Info Block.
-    poke(0x6AE, 0xF0)
+    # Read back at the same rate and encoding, set explicitly: letting the
+    # Track Info Block choose ($D6AE = $F0) used a stale TIB from an earlier
+    # format and found nothing.
+    poke(0x6AE, 0x40 | (0x01 if enc == "RLL" else 0x00))
+    poke(0x6A2, rate)
     time.sleep(0.4)
     tib = dict(track=peek(0x6A6), rate=peek(0x6A7), enc=peek(0x6A8), sectors=peek(0x6A9))
     good, bad = 0, []

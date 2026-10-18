@@ -90,3 +90,24 @@ D65.
 5. **A cheap first test** (writes to a spare HD disk only): format one track at
    rates 40 → 23 in MFM and RLL, write a pattern, read it back, and record which
    sector counts survive on this drive and media.
+
+## First hardware test, 19 October 2026 (MEGA65 R6, internal drive, spare HD disk)
+
+`track-capacity.py`, track 75, side 0, hardware format `$D081 = $A0`:
+
+- **MFM, rate 40 (standard HD):** format and read-back both work. The TIB reads
+  back as written. 21 sectors come back byte-for-byte with the pattern; sector 22
+  is cut off by the index hole. That's 10,752 bytes per track side, about
+  **1.78 MB** over 83 tracks × 2 sides (a PC 1.44 MB disk uses 18 sectors).
+- **MFM 32/29 and RLL2,7 27/25/23/21:** the format runs and the TIB reads back
+  with the requested rate and encoding, so the track was written. At MFM 32 the
+  HD decoder sees sector headers up to 26 per track side, but full sector reads
+  fail. The headers carry side byte `$80` and track `$CB` (75 with bit 7 set),
+  the side never matches, and reads end in RNF, a CRC error, or a controller
+  that stays busy. At RLL 27 almost no headers decode. So beyond the standard HD
+  rate, the read side does not work yet on this core and drive.
+- Letting the TIB pick the read rate (`$D6AE = $F0`) used a stale TIB from an
+  earlier format, so the script sets rate and encoding explicitly.
+- Afterwards the MEGA65 was reset: drive 0 is back to normal (`$D6A1` = `$08`).
+
+Raw log: `track-capacity-run2.log`.
