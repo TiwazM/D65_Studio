@@ -210,6 +210,7 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
         };
         let mut slot = vec![0; 30];
         slot[0] = entry.flags;
+        slot[22] = u8::from(entry.hidden);
         slot[1] = chain[0].0;
         slot[2] = chain[0].1;
         slot[3..19].copy_from_slice(&entry.raw_name);
@@ -282,7 +283,19 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
 }
 
 fn is_menu_program(entry: &Entry, data: &[u8]) -> bool {
-    entry.kind == 2 && valid_basic(data) && entry.name != AUTOBOOT
+    entry.kind == 2 && valid_basic(data) && entry.name != AUTOBOOT && !entry.hidden
+}
+
+/// Keep a file out of (or put it back into) the START menu; it stays on the
+/// disk and readable, only the menu changes.
+pub fn set_hidden(disk: &mut Disk, entry: &Entry, hidden: bool) -> Result<()> {
+    let mut files = contents(disk)?;
+    let (e, _) = files
+        .iter_mut()
+        .find(|(e, _)| e.raw_name == entry.raw_name)
+        .ok_or("File not found; START itself cannot be hidden.")?;
+    e.hidden = hidden;
+    repack(disk, &files)
 }
 
 /// The file BASIC 65 runs by itself from drive 8 after a reset. Ours is a
@@ -424,6 +437,7 @@ pub fn put(disk: &mut Disk, name: &str, kind: u8, data: &[u8], replace: bool) ->
                 raw_name: raw,
                 kind,
                 flags: 0x80 | kind,
+                hidden: false,
                 blocks: 0,
                 start: (0, 0),
             },
@@ -1088,6 +1102,42 @@ mod editable_tests {
         assert!(!has_autoboot(&disk));
         let mut plain = Disk::create(Format::D81, "P", "65").unwrap();
         assert!(set_autoboot(&mut plain, true).is_err());
+    }
+    #[test]
+    fn hidden_files_stay_on_disk_but_leave_the_menu() {
+        let mut disk = create_editable("MENU", "65").unwrap();
+        disk.put("GAME", 2, &PROGRAM, false).unwrap();
+        disk.put("TOOL", 2, &PROGRAM, false).unwrap();
+        let tool = disk
+            .entries()
+            .unwrap()
+            .into_iter()
+            .find(|e| e.name == "TOOL")
+            .unwrap();
+        set_hidden(&mut disk, &tool, true).unwrap();
+        let es = disk.entries().unwrap();
+        assert!(es.iter().find(|e| e.name == "TOOL").unwrap().hidden);
+        assert!(!es.iter().find(|e| e.name == "GAME").unwrap().hidden);
+        let start = disk.read(&es[0]).unwrap();
+        assert!(start.windows(4).any(|b| b == b"GAME") && !start.windows(4).any(|b| b == b"TOOL"));
+        // The flag survives later repacks and reopening.
+        disk.put("DATA", 1, b"x", false).unwrap();
+        let again = Disk::parse(disk.bytes.clone()).unwrap();
+        let tool = again
+            .entries()
+            .unwrap()
+            .into_iter()
+            .find(|e| e.name == "TOOL")
+            .unwrap();
+        assert!(tool.hidden && again.read(&tool).unwrap() == PROGRAM);
+        set_hidden(&mut disk, &tool, false).unwrap();
+        assert!(disk
+            .read(&disk.entries().unwrap()[0])
+            .unwrap()
+            .windows(4)
+            .any(|b| b == b"TOOL"));
+        let start = disk.entries().unwrap()[0].clone();
+        assert!(set_hidden(&mut disk, &start, true).is_err());
     }
     #[test]
     fn store_edits_and_reopens_large_disk() {

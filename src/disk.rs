@@ -49,6 +49,9 @@ pub struct Entry {
     pub flags: u8,
     pub blocks: usize,
     pub start: (u8, u8),
+    /// Kept out of a compilation's START menu (directory byte 24, bit 0; a
+    /// byte the DOS leaves unused for PRG, SEQ and USR files).
+    pub hidden: bool,
 }
 impl Entry {
     pub fn type_name(&self) -> &'static str {
@@ -442,6 +445,7 @@ impl Disk {
                     flags: self.bytes[o + 2],
                     blocks: u16::from_le_bytes([self.bytes[o + 30], self.bytes[o + 31]]) as usize,
                     start: (self.bytes[o + 3], self.bytes[o + 4]),
+                    hidden: self.bytes[o + 24] & 1 != 0,
                 });
             }
         }

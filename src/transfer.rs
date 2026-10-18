@@ -179,7 +179,11 @@ pub fn plan_with(
     mount: bool,
     run_start: bool,
 ) -> Result<Plan> {
-    fat_export::short_name(name)?;
+    if !card_name(name)? && (mount || run_start) {
+        return Err(
+            "Only a .D65 or .D81 image can be mounted; untick mount for other files.".into(),
+        );
+    }
     let image = image.to_string_lossy().into_owned();
     let serial = match link {
         Link::Serial(d) => Some(d.clone()),
@@ -275,6 +279,48 @@ pub fn plan_with(
         steps,
         on_fragmented,
     })
+}
+
+/// Checks an 8.3 uppercase name for the card's root folder; true when it is
+/// a disk image (the only kind the Hypervisor can mount).
+pub fn card_name(name: &str) -> Result<bool> {
+    if fat_export::short_name(name).is_ok() {
+        return Ok(true);
+    }
+    let (stem, ext) = name.rsplit_once('.').unwrap_or((name, ""));
+    let ok = |s: &str, max: usize| {
+        !s.is_empty()
+            && s.len() <= max
+            && s.bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+    };
+    if ok(stem, 8) && (ext.is_empty() || ok(ext, 3)) {
+        Ok(false)
+    } else {
+        Err("Use an 8.3 uppercase name for the card, such as SPACE.SCP.".into())
+    }
+}
+/// An 8.3 uppercase card name derived from a host filename.
+pub fn suggest_card_name(path: &Path) -> String {
+    let clean = |s: &str, max: usize| -> String {
+        s.chars()
+            .map(|c| c.to_ascii_uppercase())
+            .filter(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || *c == '_' || *c == '-')
+            .take(max)
+            .collect()
+    };
+    let stem = clean(&path.file_stem().unwrap_or_default().to_string_lossy(), 8);
+    let ext = clean(&path.extension().unwrap_or_default().to_string_lossy(), 3);
+    let stem = if stem.is_empty() {
+        "FILE".to_string()
+    } else {
+        stem
+    };
+    if ext.is_empty() {
+        stem
+    } else {
+        format!("{stem}.{ext}")
+    }
 }
 
 /// The cluster chain from m65rs' `sd clusters` output.
@@ -554,6 +600,34 @@ mod tests {
         )
         .is_err());
         assert!(plan(&rs, &[], &Link::Serial(None), img, "game.d65", false).is_err());
+        assert_eq!(card_name("GAME.D65"), Ok(true));
+        assert_eq!(card_name("SPACE.SCP"), Ok(false));
+        assert_eq!(card_name("README"), Ok(false));
+        assert!(card_name("space.scp").is_err() && card_name("TOOLONGNAME.SCP").is_err());
+        assert_eq!(
+            suggest_card_name(Path::new("/x/space commander.scp")),
+            "SPACECOM.SCP"
+        );
+        assert_eq!(suggest_card_name(Path::new("notes")), "NOTES");
+        let p = plan(
+            &rs,
+            &[rs.clone()],
+            &Link::Serial(None),
+            Path::new("/x/SPACE.SCP"),
+            "SPACE.SCP",
+            false,
+        )
+        .unwrap();
+        assert_eq!(p.steps[0].args[2..4], ["/x/SPACE.SCP", "SPACE.SCP"]);
+        assert!(plan(
+            &rs,
+            &[rs.clone()],
+            &Link::Serial(None),
+            Path::new("/x/SPACE.SCP"),
+            "SPACE.SCP",
+            true
+        )
+        .is_err());
         // mega65_ftp alone: one invocation does everything.
         let p = plan(
             &ftp,

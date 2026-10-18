@@ -29,6 +29,7 @@ enum Pick {
     Create(Disk),
     Replace(Entry),
     ToolPath(transfer::Kind),
+    SendFile,
 }
 fn home() -> PathBuf {
     std::env::var_os("HOME")
@@ -136,6 +137,8 @@ struct Studio {
     send_name: String,
     send_mount: bool,
     send_run: bool,
+    /// A file other than the open image to send to the card.
+    send_file: Option<PathBuf>,
     send_task: Option<std::thread::JoinHandle<Result<String>>>,
     send_progress: Arc<Mutex<Vec<String>>>,
     send_started: Option<std::time::Instant>,
@@ -189,6 +192,7 @@ impl Default for Studio {
             send_name: String::new(),
             send_mount: true,
             send_run: false,
+            send_file: None,
             send_task: None,
             send_progress: Arc::new(Mutex::new(Vec::new())),
             send_started: None,
@@ -311,7 +315,18 @@ impl Studio {
             self.tool_ftp.clone(),
         )))
     }
+    fn open_send_file(&mut self, p: PathBuf) {
+        self.send_tools = self.tools();
+        self.send_tool = transfer::preferred(&self.send_tools, false).cloned();
+        self.send_ethernet = false;
+        self.send_name = transfer::suggest_card_name(&p);
+        self.send_mount = false;
+        self.send_run = false;
+        self.send_file = Some(p);
+        self.send_open = true;
+    }
     fn open_send(&mut self, ethernet: bool) {
+        self.send_file = None;
         self.send_tools = self.tools();
         self.send_tool = transfer::preferred(&self.send_tools, ethernet).cloned();
         self.send_ethernet = ethernet;
@@ -325,17 +340,23 @@ impl Studio {
         let Some(tool) = self.send_tool.clone() else {
             return;
         };
-        let (bytes, path) = {
-            let s = self.store.as_ref().unwrap().lock().unwrap();
-            (s.disk.bytes.clone(), s.path.clone())
+        let path = match &self.send_file {
+            Some(p) => p.clone(),
+            None => {
+                let s = self.store.as_ref().unwrap().lock().unwrap();
+                let unchanged = fs::read(&s.path).ok().as_deref() == Some(s.disk.bytes.as_slice());
+                let p = s.path.clone();
+                drop(s);
+                if !unchanged {
+                    self.report(
+                        Err("Image changed on disk. Reopen it before sending.".into()),
+                        "",
+                    );
+                    return;
+                }
+                p
+            }
         };
-        if fs::read(&path).ok().as_deref() != Some(bytes.as_slice()) {
-            self.report(
-                Err("Image changed on disk. Reopen it before sending.".into()),
-                "",
-            );
-            return;
-        }
         let blank = |s: &String| s.trim().is_empty();
         let link = if self.send_ethernet {
             Link::Ethernet(
@@ -405,6 +426,7 @@ impl Studio {
                 }
                 self.save_settings();
             }
+            Pick::SendFile => self.open_send_file(first),
             Pick::Replace(e) => {
                 let r = fs::read(&first)
                     .map_err(|e| e.to_string())
@@ -984,6 +1006,8 @@ impl eframe::App for Studio {
                             ui.menu_button("Send to MEGA65", |ui| {
                                 if ui.button("Over USB JTAG…").clicked() { self.open_send(false); ui.close_menu(); }
                                 if ui.button("Over Ethernet…").clicked() { self.open_send(true); ui.close_menu(); }
+                                ui.separator();
+                                if ui.button("Any File to the Card…").on_hover_text("Puts a file such as a game's data file (SPACE.SCP) in the card's root folder over USB JTAG.").clicked() { self.ask(Pick::SendFile, one(rfd::AsyncFileDialog::new().set_title("Choose the file to put on the SD card").pick_file())); ui.close_menu(); }
                             });
                         });
                         ui.separator();
@@ -1007,6 +1031,15 @@ impl eframe::App for Studio {
                                 ui.close_menu();
                             }
                             if ui.button("Delete Selected File…").clicked() { self.delete_open = true; ui.close_menu(); }
+                            if big {
+                                let e = picked.clone().unwrap();
+                                if ui.button(if e.hidden { "Show in START Menu" } else { "Hide from START Menu" }).on_hover_text("The file stays on the disk and readable; only the START menu changes.").clicked() {
+                                    let hide = !e.hidden;
+                                    let r = self.store.as_ref().unwrap().lock().unwrap().change(|d| mega65_disklab::launcher::set_hidden(d, &e, hide));
+                                    self.report(r, if hide { "Hidden from the START menu." } else { "Shown in the START menu again." });
+                                    ui.close_menu();
+                                }
+                            }
                         });
                         if ui.add_enabled(has_pick, egui::Button::new("Extract Selected File…")).clicked() { self.export(); ui.close_menu(); }
                         ui.separator();
@@ -1145,7 +1178,11 @@ impl eframe::App for Studio {
                                             self.selected = Some(e.offset);
                                             self.rename = e.name.clone();
                                         }
-                                        ui.label(e.type_name());
+                                        ui.label(if e.hidden {
+                                            format!("{} · hidden", e.type_name())
+                                        } else {
+                                            e.type_name().to_string()
+                                        });
                                         ui.label(e.blocks.to_string());
                                         ui.label(
                                             disk.read(e)
@@ -1500,7 +1537,10 @@ impl eframe::App for Studio {
                 }
                 ui.label("Filename on the card (8 characters, .D65 or .D81)");
                 ui.add(egui::TextEdit::singleline(&mut self.send_name).char_limit(12).desired_width(200.0));
-                ui.checkbox(&mut self.send_mount, "Ask the MEGA65 to mount it as drive 8 afterwards");
+                if let Some(p) = &self.send_file {
+                    ui.label(RichText::new(format!("File: {}", p.display())).small().color(Color32::GRAY));
+                }
+                ui.add_enabled(self.send_file.is_none(), egui::Checkbox::new(&mut self.send_mount, "Ask the MEGA65 to mount it as drive 8 afterwards"));
                 ui.add_enabled(self.send_mount, egui::Checkbox::new(&mut self.send_run, "then type RUN\"START\" on the MEGA65 (needs m65rs over JTAG)"));
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
@@ -1564,11 +1604,12 @@ fn cli(args: &[String]) -> Result<()> {
     match args.first().map(String::as_str){
         Some("create") if args.len()==4&&args[1].eq_ignore_ascii_case("d65big")=>{Store::create(Path::new(&args[2]),mega65_disklab::launcher::create_editable(&args[3],"65")?)?;println!("Large D65 with START resident reader created. Use add to put files on it; START is rebuilt each time.");},
         Some("send") if args.len()>=3=>{
-            let image=fs::canonicalize(&args[1]).map_err(|e|e.to_string())?;Disk::parse(fs::read(&image).map_err(|e|e.to_string())?)?;
+            let image=fs::canonicalize(&args[1]).map_err(|e|e.to_string())?;if transfer::card_name(&args[2].to_ascii_uppercase())?{Disk::parse(fs::read(&image).map_err(|e|e.to_string())?)?;}
             let name=args[2].to_ascii_uppercase();let (mut link,mut mount,mut run,mut tool)=(Link::Serial(None),false,false,None);let mut i=3;
             while i<args.len(){let next=args.get(i+1).filter(|a|!a.starts_with("--")).cloned();match args[i].as_str(){"--mount"=>mount=true,"--run"=>{mount=true;run=true},"--ethernet"=>{if next.is_some(){i+=1}link=Link::Ethernet(next)},"--serial"=>{if next.is_some(){i+=1}link=Link::Serial(next)},"--tool"=>{tool=next.ok_or("--tool needs a path")?.into();i+=1},o=>return Err(format!("Unknown option {o}"))}i+=1}
             let tool=match tool{Some(p)=>{let p=PathBuf::from(p);Tool{kind:if p.file_name().unwrap_or_default().to_string_lossy().contains("ftp"){transfer::Kind::Mega65Ftp}else{transfer::Kind::M65rs},path:p}},None=>transfer::preferred(&transfer::find_tools_with(&tool_overrides(&load_settings())),matches!(link,Link::Ethernet(_))).cloned().ok_or("No transfer tool found. Install MEGA65 Studio (m65rs) or M65Connect (mega65_ftp), or pass --tool PATH.")?};
             let tools=transfer::find_tools_with(&tool_overrides(&load_settings()));let steps=transfer::plan_with(&tool,&tools,&link,&image,&name,mount,run)?;let tail=transfer::run(&steps,|l|println!("{l}"))?;println!("Sent {name} to the MEGA65's SD card with {}.\n{tail}",tool.name());},
+        Some("hide") if args.len()==4&&(args[3]=="on"||args[3]=="off")=>{let mut s=Store::open(Path::new(&args[1]))?;let e=s.disk.entries()?.into_iter().find(|e|e.name==args[2].to_ascii_uppercase()).ok_or("No such file on the image")?;s.change(|d|mega65_disklab::launcher::set_hidden(d,&e,args[3]=="on"))?;println!("{} {} the START menu.",e.name,if args[3]=="on"{"hidden from"}else{"shown in"});},
         Some("autoboot") if args.len()==3&&(args[2]=="on"||args[2]=="off")=>{let mut s=Store::open(Path::new(&args[1]))?;s.change(|d|mega65_disklab::launcher::set_autoboot(d,args[2]=="on"))?;println!("AUTOBOOT.C65 {}.",if args[2]=="on"{"added: START runs after a reset while the image is mounted"}else{"removed"});},
         Some("update-start") if args.len()==2=>{let mut s=Store::open(Path::new(&args[1]))?;if !mega65_disklab::launcher::start_outdated(&s.disk)?{println!("START is already current.");}else{s.change(|d|mega65_disklab::launcher::update_start(d))?;println!("START replaced with the current reader and menu. Files are unchanged; a backup was kept beside the image.");}},
         Some("create") if args.len()==4=>{let format=if args[1].eq_ignore_ascii_case("d81"){Format::D81}else if args[1].eq_ignore_ascii_case("d65"){Format::D65}else{return Err("Format must be d65 or d81".into())};Store::create(Path::new(&args[2]),Disk::create(format,&args[3],"65")?)?;},
@@ -1585,7 +1626,7 @@ fn cli(args: &[String]) -> Result<()> {
         Some("serve") if args.len()==2=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let b=mega65_disklab::mount::bridge(s,false)?;println!("{}",b.url);loop{std::thread::sleep(std::time::Duration::from_secs(1));}},
         #[cfg(any(target_os="macos", windows))]
         Some("mount") if args.len()==3||args.len()==4=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let ro=args.get(3).map(String::as_str)==Some("--read-only");mega65_disklab::mount::start(s,Path::new(&args[2]),ro)?.join().map_err(|_|"Mount worker panicked")??;},
-        _=>return Err("Usage: mega65-disklab [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | update-start IMAGE | autoboot IMAGE on|off | send IMAGE NAME.D65 [--serial [PORT] | --ethernet [IPV6]] [--mount] [--run] [--tool PATH] | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
+        _=>return Err("Usage: mega65-disklab [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | update-start IMAGE | autoboot IMAGE on|off | hide IMAGE NAME on|off | send IMAGE NAME.D65 [--serial [PORT] | --ethernet [IPV6]] [--mount] [--run] [--tool PATH] | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
     }
     Ok(())
 }
