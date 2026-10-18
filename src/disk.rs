@@ -145,6 +145,15 @@ pub fn import_name(path: &std::path::Path) -> Result<(String, u8)> {
 /// PRG, SEQ and USR file it holds (a compilation's own START excepted); any
 /// other file is one entry named by `import_name`.
 pub fn import_files(path: &std::path::Path) -> Result<Vec<(String, u8, Vec<u8>)>> {
+    Ok(import_from(path)?.files)
+}
+/// What `import_files` found, plus the entries of a disk image it could not
+/// take (REL files and CBM partitions have no flat byte stream to copy).
+pub struct Import {
+    pub files: Vec<(String, u8, Vec<u8>)>,
+    pub skipped: Vec<String>,
+}
+pub fn import_from(path: &std::path::Path) -> Result<Import> {
     let shown = path.display();
     let bytes = std::fs::read(path).map_err(|e| format!("{shown}: {e}"))?;
     let ext = path
@@ -156,8 +165,13 @@ pub fn import_files(path: &std::path::Path) -> Result<Vec<(String, u8, Vec<u8>)>
         let source = Disk::parse(bytes).map_err(|e| format!("{shown}: {e}"))?;
         let resident = crate::launcher::is_editable(&source);
         let mut out = Vec::new();
+        let mut skipped = Vec::new();
         for e in source.entries()? {
-            if !(1..=3).contains(&e.kind) || (resident && e.name == "START") {
+            if resident && e.name == "START" {
+                continue;
+            }
+            if !(1..=3).contains(&e.kind) {
+                skipped.push(format!("{} ({})", e.name, e.type_name()));
                 continue;
             }
             out.push((e.name.clone(), e.kind, source.read(&e)?));
@@ -165,10 +179,16 @@ pub fn import_files(path: &std::path::Path) -> Result<Vec<(String, u8, Vec<u8>)>
         if out.is_empty() {
             return Err(format!("{shown} holds no PRG, SEQ or USR files."));
         }
-        return Ok(out);
+        return Ok(Import {
+            files: out,
+            skipped,
+        });
     }
     let (name, kind) = import_name(path)?;
-    Ok(vec![(name, kind, bytes)])
+    Ok(Import {
+        files: vec![(name, kind, bytes)],
+        skipped: Vec::new(),
+    })
 }
 pub fn display_name(bytes: &[u8]) -> String {
     bytes

@@ -286,6 +286,15 @@ fn disk_images_import_all_of_their_files() {
     )
     .unwrap();
     assert!(import_files(&empty).unwrap_err().contains("no PRG"));
+    // A REL entry is reported, not silently dropped.
+    let mut rel = Disk::parse(std::fs::read(dir.path().join("src.d81")).unwrap()).unwrap();
+    let e = rel.entries().unwrap()[0].clone();
+    rel.bytes[e.offset + 2] = 0x84;
+    let p = dir.path().join("rel.d81");
+    std::fs::write(&p, &rel.bytes).unwrap();
+    let r = mega65_disklab::disk::import_from(&p).unwrap();
+    assert_eq!(r.files.len(), 1);
+    assert_eq!(r.skipped, ["GAME (REL)"]);
     let prg = dir.path().join("demo.prg");
     std::fs::write(&prg, [1, 8]).unwrap();
     assert_eq!(

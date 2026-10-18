@@ -513,10 +513,13 @@ impl Studio {
         );
     }
     fn import_paths(&mut self, paths: Vec<PathBuf>) {
+        let mut skipped = Vec::new();
         let r = (|| {
             let mut files = Vec::new();
             for p in paths {
-                files.extend(mega65_disklab::disk::import_files(&p)?);
+                let import = mega65_disklab::disk::import_from(&p)?;
+                files.extend(import.files);
+                skipped.extend(import.skipped);
             }
             self.store
                 .as_ref()
@@ -531,7 +534,15 @@ impl Studio {
                     Ok(())
                 })
         })();
-        self.report(r, "Files added and saved.");
+        let ok = if skipped.is_empty() {
+            "Files added and saved.".to_string()
+        } else {
+            format!(
+                "Files added and saved. Not copied (only PRG, SEQ and USR can be): {}.",
+                skipped.join(", ")
+            )
+        };
+        self.report(r, &ok);
     }
     fn export(&mut self) {
         if let Some(e) = self.picked() {
