@@ -37,6 +37,8 @@ RUN"START"
 
 Select a program from the menu.
 
+A resident image can carry `AUTOBOOT.C65`, a one-line program that BASIC 65 runs from drive 8 after every reset, so the START menu appears by itself while the image is mounted: tick it when creating a large disk, toggle it under Edit, or run `mega65-disklab autoboot IMAGE on|off`.
+
 To build a large disk from scratch instead, choose **New disk**, keep **D65** selected and tick **Large D65 with START resident reader**. The new image holds only `START`; add PRG, SEQ and USR files with **Add files…**. Every change repacks the whole image, regenerates the `START` menu (BASIC programs at `$2001`, up to 99) and keeps a backup of the original beside it. The same is available from the command line:
 
 ```sh

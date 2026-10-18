@@ -19,6 +19,7 @@ fn line(out: &mut Vec<u8>, number: u16, body: &[u8]) {
 fn token(s: &str) -> Vec<u8> {
     let words: &[(&str, &[u8])] = &[
         ("RESTORE", &[0x8c]),
+        ("RUN", &[0x8a]),
         ("PEEK", &[0xc2]),
         ("SYS", &[0x9e]),
         ("PRINT", &[0x99]),
@@ -259,7 +260,37 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
 }
 
 fn is_menu_program(entry: &Entry, data: &[u8]) -> bool {
-    entry.kind == 2 && valid_basic(data)
+    entry.kind == 2 && valid_basic(data) && entry.name != AUTOBOOT
+}
+
+/// The file BASIC 65 runs by itself from drive 8 after a reset. Ours is a
+/// one-line program that runs START, so the menu appears whenever the image
+/// is mounted and the MEGA65 restarts.
+pub const AUTOBOOT: &str = "AUTOBOOT.C65";
+pub fn autoboot_program() -> Vec<u8> {
+    let mut basic = Vec::new();
+    line(&mut basic, 10, &token("RUN\"START\""));
+    basic.extend_from_slice(&[0, 0]);
+    let mut prg = vec![1, 0x20];
+    prg.extend(basic);
+    prg
+}
+pub fn has_autoboot(disk: &Disk) -> bool {
+    disk.entries()
+        .map(|e| e.iter().any(|e| e.name == AUTOBOOT))
+        .unwrap_or(false)
+}
+/// Add or remove AUTOBOOT.C65 on a resident image.
+pub fn set_autoboot(disk: &mut Disk, on: bool) -> Result<()> {
+    if !is_editable(disk) {
+        return Err("Only resident-reader images have a START for AUTOBOOT.C65 to run.".into());
+    }
+    match (on, disk.entries()?.into_iter().find(|e| e.name == AUTOBOOT)) {
+        (true, None) => disk.put(AUTOBOOT, 2, &autoboot_program(), false),
+        (true, Some(e)) => disk.put(&e.name, 2, &autoboot_program(), true),
+        (false, Some(e)) => disk.remove(&e),
+        (false, None) => Ok(()),
+    }
 }
 
 /// An empty resident-reader D65: every change repacks the files and
@@ -995,6 +1026,32 @@ mod editable_tests {
         assert!(valid_basic(&disk.read(&es[0]).unwrap()));
         let mut plain = Disk::create(Format::D65, "PLAIN", "65").unwrap();
         assert!(update_start(&mut plain).is_err());
+    }
+    #[test]
+    fn autoboot_runs_start_without_joining_the_menu() {
+        let mut disk = create_editable("BOOT", "65").unwrap();
+        disk.put("GAME", 2, &PROGRAM, false).unwrap();
+        assert!(!has_autoboot(&disk));
+        set_autoboot(&mut disk, true).unwrap();
+        assert!(has_autoboot(&disk));
+        let es = disk.entries().unwrap();
+        let boot = disk
+            .read(es.iter().find(|e| e.name == AUTOBOOT).unwrap())
+            .unwrap();
+        assert!(valid_basic(&boot));
+        assert_eq!(
+            boot,
+            [1, 0x20, 0x0e, 0x20, 10, 0, 0x8a, b'"', b'S', b'T', b'A', b'R', b'T', b'"', 0, 0, 0]
+        );
+        let start = disk.read(&es[0]).unwrap();
+        assert!(start.windows(4).any(|b| b == b"GAME"));
+        assert!(!start.windows(8).any(|b| b == b"AUTOBOOT"));
+        set_autoboot(&mut disk, true).unwrap();
+        assert_eq!(disk.entries().unwrap().len(), 3);
+        set_autoboot(&mut disk, false).unwrap();
+        assert!(!has_autoboot(&disk));
+        let mut plain = Disk::create(Format::D81, "P", "65").unwrap();
+        assert!(set_autoboot(&mut plain, true).is_err());
     }
     #[test]
     fn store_edits_and_reopens_large_disk() {
