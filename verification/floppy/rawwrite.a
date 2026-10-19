@@ -18,14 +18,17 @@
     sta $d081           ; cancel anything running
     lda #$a1
     sta $d081           ; unbuffered format: gate opens at the next index
-lowait:
+; The controller opens the gate when the index pulse ENDS (sdcardio.vhdl:
+; f_index_rising_edge is the active-low index line going high again), which
+; is $D083 bit 2 (over index) going from 1 to 0.
+inpulse:
     lda $d083
     and #$04
-    bne lowait          ; index sensor low
-hiwait:
+    beq inpulse         ; wait for the index pulse
+pulseend:
     lda $d083
     and #$04
-    beq hiwait          ; rising edge: the gate is opening now
+    bne pulseend        ; end of the pulse: the gate opens now
     lda #0
     sta $d702
     sta $d704

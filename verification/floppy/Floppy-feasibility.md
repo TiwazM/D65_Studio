@@ -161,3 +161,29 @@ This matches `F011WriteSectorRealDriveWait`, which waits on `fdc_sector_found`
 from the 81-cycle decoder only. Writing our own data at HD therefore needs
 either a core change (also accept `fdc_sector_found_2x` there, as the read
 path does) or writing whole tracks as raw flux by DMA (`$D705` option `$0D`).
+
+## Raw-flux track write: works (19 October 2026)
+
+`rawtrack.py` builds a track exactly like the core's own HD format (TIB, 21
+sectors, same gaps and syncs) but with our data, as one DMA byte per flux
+transition. `rawwrite.a` starts the C65-style unbuffered format
+(`$D081=$A1`), which holds the write gate open from one index pulse to the
+next and, being fed no bytes, writes nothing itself; the routine streams the
+flux with DMA option `$0D` from chip RAM `$40000` (two chained jobs, split in a
+gap). `rawtrack-test.py` runs it and reads the sectors back with the normal
+`$D081=$40` reads, following the TIB.
+
+- First run: the data was on the disk (decoded from a raw flux capture,
+  `$D705` option `$0F`) and 20/21 sectors read back with the rate set by hand,
+  but the TIB and sector 1 were lost: the DMA was started at the beginning of
+  the index pulse, while the controller opens the gate at its end
+  (`f_index_rising_edge` = index line going inactive = `$D083` bit 2 falling).
+- After waiting for the end of the pulse: **21/21 sectors byte-perfect, and the
+  controller follows our own TIB** (track 40, rate 40, 21 sectors), twice in a
+  row. 96.7% of a revolution with 3 cycles of DMA overhead allowed per flux
+  byte. Measured flux: 2/3/4-cell intervals read back as about 80/114/152
+  cycles (normal MFM peak shift; no precompensation applied).
+
+So a standard-HD floppy writer (~1.78 MB) is possible on this core without any
+core change: write tracks as raw flux, read with the normal sector reads.
+Log: `rawtrack-runs.log`.
