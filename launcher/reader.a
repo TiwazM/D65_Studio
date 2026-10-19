@@ -100,6 +100,13 @@ fail:
 cleanup:
     lda oldbufsel
     sta $d689
+!ifdef FLOPPY {
+    ; Hand the drive back as found: DOS cannot read with automatic seeking on.
+    lda oldseek
+    sta $d696
+    lda oldtib
+    sta $d6ae
+}
     lda olddmamb
     sta $d704
     lda olddma
@@ -192,6 +199,10 @@ offset: !word 0
 olddma: !byte 0
 olddmamb: !byte 0
 oldbufsel: !byte 0
+!ifdef FLOPPY {
+oldseek: !byte 0
+oldtib: !byte 0
+}
 !ifndef COMPAT { savedsp: !byte 0 }
 remain: !word 0
 checksum: !word 0
@@ -235,6 +246,10 @@ engine:
     lda #$01
     sta $d6a1
 realdrive:
+    lda $d696
+    sta oldseek
+    lda $d6ae
+    sta oldtib
     lda #$80
     sta $d696
     lda #$f0

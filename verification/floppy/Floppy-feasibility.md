@@ -208,3 +208,17 @@ this exact core (release-0.97.2, 03b24c6), `F011WriteSectorRealDriveWait` waits
 on `fdc_sector_found` from `mfm0`, whose rate is hard-wired to 81 cycles, so
 `$D6A2` does not reach it. HD sector writes need that decoder to follow the
 selected rate (or the wait to accept `fdc_sector_found_2x`).
+
+## End-to-end: DiskLab write + START boot (2026-10-20)
+
+- `mega65-disklab write-floppy TEST.dhd`: 166 track sides, 3288 sectors verified,
+  6 rewrites, 409 s (app-write.log). Same disk written three times; 6–8 sides need a
+  second pass each time.
+- BASIC `DIR` reads the 1581 band; `RUN"START"` lists the games and loads ASTRAAMP
+  and GOGO65 from the HD tracks (boot-astraamp.png, boot-gogo65.png).
+- Bug found: the floppy reader left `$D696=$80` (automatic seeking), and DOS then
+  fails with `27,READ ERROR,40,00`, even after a reset (the register survives reset).
+  The reader now saves and restores `$D696` and `$D6AE`.
+- Bug found: with an autobooting floppy, START loads its reader at `$1600`, the same
+  address as the writer, so the write stalled on track 0. `write_disk` now halts the
+  CPU before loading the writer.

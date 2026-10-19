@@ -269,6 +269,9 @@ pub fn write_disk(
     let started = Instant::now();
     let writer = work.join("floppywrite.bin");
     std::fs::write(&writer, WRITER).map_err(|e| e.to_string())?;
+    // Halt whatever is running (an autobooting START loads its reader at
+    // the same address) so nothing overwrites the writer.
+    m.run(&["stop".into()])?;
     m.load(&writer, WRITER_AT)?;
     const IO: u32 = 0xFFD3000;
     m.poke(IO + 0x6A1, &[0x01])?; // real drive 0
