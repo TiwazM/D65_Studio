@@ -45,17 +45,18 @@ class Cells:
         self.prev = 1
 
 
-def track_cells(track, sectors, rate, side=0, encoding=0x40, tib_sectors=None, gap_marks=None):
+def track_cells(track, sectors, rate, side=0, encoding=0x40, tib_sectors=None, gap_marks=None,
+                lead_in=14, tib_gap=2):
     """sectors: list of 512-byte blocks, numbered from 1. gap_marks, if
     given, receives the cell offset where each sector's trailing gap starts."""
     c = Cells()
-    c.bytes([0x00] * 14)
+    c.bytes([0x00] * lead_in)
     tib = [0x65, track, rate, encoding, tib_sectors if tib_sectors is not None else len(sectors)]
     for _ in range(3):
         c.sync_a1()
     crc = crc16(bytes([0xA1] * 3 + tib))
     c.bytes(tib + [crc >> 8, crc & 0xFF])
-    c.bytes([0x00] * 4 + [0x4E] * 2)
+    c.bytes([0x00] * 4 + [0x4E] * tib_gap)
     for n, data in enumerate(sectors, start=1):
         assert len(data) == 512
         header = [0xFE, track, side, n, 0x02]

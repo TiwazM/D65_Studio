@@ -187,3 +187,24 @@ gap). `rawtrack-test.py` runs it and reads the sectors back with the normal
 So a standard-HD floppy writer (~1.78 MB) is possible on this core without any
 core change: write tracks as raw flux, read with the normal sector reads.
 Log: `rawtrack-runs.log`.
+
+## Full disk, 19 October 2026: 1.78 MB, no errors
+
+`fulldisk-test.py`: all 83 tracks x 2 sides of a Sony 2HD disk written as raw
+flux at the standard HD rate (21 x 512 bytes per track side, unique data in
+every sector, 40 lead-in bytes and a 24-byte gap after the TIB), each track
+side verified straight after writing through the normal sector reads
+following its TIB, bytes compared on every 10th track:
+
+**3,486 of 3,486 sectors good (1,784,832 bytes), 0 CRC errors, 0 missing,
+0 wrong, in 59.6 minutes** (most of that is the serial monitor; the writes
+themselves take one revolution per track side). Log: `fulldisk-run1.log`.
+
+The core's 14-byte lead-in was not enough here: sector 1 went missing on 2 of 4
+track sides until the lead-in grew to 40 bytes and the TIB gap to 24.
+
+On gardners' hint that sector writes need the data rate set explicitly: in
+this exact core (release-0.97.2, 03b24c6), `F011WriteSectorRealDriveWait` waits
+on `fdc_sector_found` from `mfm0`, whose rate is hard-wired to 81 cycles, so
+`$D6A2` does not reach it. HD sector writes need that decoder to follow the
+selected rate (or the wait to accept `fdc_sector_found_2x`).
