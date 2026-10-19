@@ -21,6 +21,8 @@ ap.add_argument("--m65rs", default="/Applications/mega65studio/m65rs")
 ap.add_argument("--dry-run", action="store_true", help="only read status registers")
 ap.add_argument("--manual-read", action="store_true",
                 help="set rate/encoding by hand for reads instead of following the TIB")
+ap.add_argument("--write-test", type=int, metavar="SECTOR",
+                help="after formatting, write this sector with $D081=$80 and read it back")
 ap.add_argument("--erase", action="store_true",
                 help="format the track at the standard HD rate before each test format")
 ap.add_argument("--settings", default="MFM:40,MFM:32,MFM:29,RLL:27,RLL:25,RLL:23,RLL:21",
@@ -138,6 +140,28 @@ for setting in args.settings.split(","):
         else:
             print(f"  (TIB for {enc} {rate} never seen; reading anyway)")
     tib = dict(track=peek(0x6A6), rate=peek(0x6A7), enc=peek(0x6A8), sectors=peek(0x6A9))
+    if args.write_test:
+        # Sector write through the controller. sdcardio.vhdl waits for
+        # fdc_sector_found from the DD (81-cycle) decoder before opening the
+        # write gate, so above DD this is expected to time out.
+        pattern = bytes((0xA5 ^ i) & 0xFF for i in range(512))
+        m65("poke", "ffd6c00", *[f"{b:02x}" for b in pattern])
+        poke(0x081, 0x00)
+        poke(0x084, args.track)
+        poke(0x085, args.write_test)
+        poke(0x086, 0)
+        poke(0x081, 0x80)
+        done = wait_idle(timeout=3.0)
+        st = status()
+        print(f"  write sector {args.write_test}: finished={done} rnf={st['rnf']} crc={st['crc']}")
+        poke(0x081, 0x00)
+        poke(0x081, 0x01)
+        poke(0x081, 0x40)
+        wait_idle(timeout=3.0)
+        back = bytes.fromhex("".join(
+            line.split(":")[1].split("  ")[0].replace(" ", "")
+            for line in m65("dump", "ffd6c00", "512").splitlines() if ":" in line))
+        print(f"  read back: {'written pattern' if back == pattern else 'format pattern' if back == expected else 'other'} (rnf={status()['rnf']})")
     good, bad, crc, missing = 0, [], [], []
     for s in range(1, 65):
         poke(0x081, 0x00)
