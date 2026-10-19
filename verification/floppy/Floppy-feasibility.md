@@ -127,3 +127,23 @@ Raw log: `track-capacity-run2.log`.
   or drive is marginal at HD rates, or the core's HD read path isn't
   dependable yet. A new HD disk (and a check that this one really is HD) is the
   next thing to rule out before building anything on top.
+
+## Third session, 19 October 2026: following the TIB (gardners' hint)
+
+Reads now follow the Track Info Block: `$D6AE` bit 7 (TIBEN, encoding from the
+TIB) and bit 5 (VARSPD, data rate from the TIB), plus bit 6 (HD decoder), and
+the test waits until `$D6A6`-`$D6A8` show the TIB just written. Track 40.
+
+- MFM 40: 20-21 clean sectors (TIB followed correctly).
+- MFM 32 and 29, with `$A0` and with `$A8` (track-at-once): the new TIB is seen,
+  headers for sectors 1-20+ decode (`$D6A3` shows track `$A8` = 40 with bit 7
+  set, `$D6A5` side `$80`), but a sector read (`$D081 = $40`) never finishes:
+  BUSY stays set, no RNF, no CRC, whatever track/side byte is requested
+  (40 or `$A8`, 0 or `$80`). The script's earlier "not found" results at these
+  rates were reads timing out.
+- RLL 27/25/23: with `$A0` the TIB is not always seen; with `$A8` it is (encoding
+  byte reads 1 instead of `$41`). Reads behave the same as MFM 32.
+
+So the rate switch works and headers decode; the sector read state machine is
+what doesn't complete above the standard HD rate. Log:
+`track-capacity-run5-tib-follow.log`.

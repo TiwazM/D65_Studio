@@ -19,6 +19,8 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--track", type=int, default=75)
 ap.add_argument("--m65rs", default="/Applications/mega65studio/m65rs")
 ap.add_argument("--dry-run", action="store_true", help="only read status registers")
+ap.add_argument("--manual-read", action="store_true",
+                help="set rate/encoding by hand for reads instead of following the TIB")
 ap.add_argument("--erase", action="store_true",
                 help="format the track at the standard HD rate before each test format")
 ap.add_argument("--settings", default="MFM:40,MFM:32,MFM:29,RLL:27,RLL:25,RLL:23,RLL:21",
@@ -114,12 +116,27 @@ for setting in args.settings.split(","):
     poke(0x081, command)                  # hardware format: $A0 with gaps, $A8 track-at-once
     if not wait_idle(timeout=5.0):
         sys.exit("Format did not finish.")
-    # Read back at the same rate and encoding, set explicitly: letting the
-    # Track Info Block choose ($D6AE = $F0) used a stale TIB from an earlier
-    # format and found nothing.
-    poke(0x6AE, 0x40 | (0x01 if enc == "RLL" else 0x00))
-    poke(0x6A2, rate)
-    time.sleep(0.4)
+    encbits = 0x01 if enc == "RLL" else 0x00
+    if args.manual_read:
+        # Rate and encoding set by hand for the read.
+        poke(0x6AE, 0x40 | encbits)
+        poke(0x6A2, rate)
+        time.sleep(0.4)
+    else:
+        # Follow the Track Info Block (gardners' hint): $D6AE bit 7 TIBEN takes
+        # the encoding from the TIB, bit 5 VARSPD the data rate
+        # (sdcardio.vhdl: use_tib_info, fdc_variable_data_rate ->
+        # cycles_per_interval_actual), bit 6 selects the HD decoder. The TIB
+        # registers only change when a TIB passes under the head, so wait
+        # until they show the one just written; otherwise an older TIB rules.
+        poke(0x6A2, 40)
+        poke(0x6AE, 0xE0 | encbits)
+        end = time.time() + 3.0
+        while time.time() < end:
+            if (peek(0x6A6), peek(0x6A7), peek(0x6A8) & 0x0F) == (args.track, rate, encbits):
+                break
+        else:
+            print(f"  (TIB for {enc} {rate} never seen; reading anyway)")
     tib = dict(track=peek(0x6A6), rate=peek(0x6A7), enc=peek(0x6A8), sectors=peek(0x6A9))
     good, bad, crc, missing = 0, [], [], []
     for s in range(1, 65):
