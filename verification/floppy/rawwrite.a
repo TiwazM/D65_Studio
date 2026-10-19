@@ -1,0 +1,68 @@
+; Write one floppy track as raw flux (DMA option $0D) for track-at-once
+; experiments. The host loads this at $1600, the flux bytes at $40000 and
+; patches the two job lengths, then jumps here.
+;
+; The controller's unbuffered format ($D081 = $A1) opens the write gate at
+; the next index pulse and closes it at the one after. We feed it no bytes,
+; so its own writer stays silent, and the flux comes from the DMA, which the
+; core ANDs into the drive's write-data line (machine.vhdl).
+!cpu m65
+* = $1600
+    sei
+    lda #$47
+    sta $d02f
+    lda #$53
+    sta $d02f
+    lda #0
+    sta done
+    sta $d081           ; cancel anything running
+    lda #$a1
+    sta $d081           ; unbuffered format: gate opens at the next index
+lowait:
+    lda $d083
+    and #$04
+    bne lowait          ; index sensor low
+hiwait:
+    lda $d083
+    and #$04
+    beq hiwait          ; rising edge: the gate is opening now
+    lda #0
+    sta $d702
+    sta $d704
+    sta $d703           ; F018A job format
+    lda #>list
+    sta $d701
+    lda #<list
+    sta $d705           ; enhanced DMA; the CPU waits until it finishes
+gatewait:
+    lda $d082
+    bmi gatewait        ; format ends (gate closes) at the next index
+    lda #1
+    sta done
+    cli
+park:
+    jmp park
+
+done: !byte 0
+
+; Two chained COPY jobs, split inside an inter-sector gap.
+list:
+    !byte $0d, $80, $00, $81, $00, $00
+    !byte $04           ; COPY, chained
+len1:
+    !word 0
+    !word $0000
+    !byte $04           ; source $40000
+    !word $f000
+    !byte $05           ; destination unused in floppy mode
+    !word 0
+    !byte $0d, $80, $00, $81, $00, $00
+    !byte $00           ; COPY, last job
+len2:
+    !word 0
+src2:
+    !word 0
+    !byte $04
+    !word $f000
+    !byte $05
+    !word 0
