@@ -147,3 +147,17 @@ the test waits until `$D6A6`-`$D6A8` show the TIB just written. Track 40.
 So the rate switch works and headers decode; the sector read state machine is
 what doesn't complete above the standard HD rate. Log:
 `track-capacity-run5-tib-follow.log`.
+
+## Sector write test, 19 October 2026
+
+Track 40, format at the given rate, then `$D081=$80` on sector 5 with a new
+pattern, then read it back (`track-capacity-run6-write.log`):
+
+- **HD (rate 40):** the write ends with RNF, and sector 5 still holds the
+  format pattern. Nothing was written.
+- **DD control (rate 81):** the write succeeds and reads back as written.
+
+This matches `F011WriteSectorRealDriveWait`, which waits on `fdc_sector_found`
+from the 81-cycle decoder only. Writing our own data at HD therefore needs
+either a core change (also accept `fdc_sector_found_2x` there, as the read
+path does) or writing whole tracks as raw flux by DMA (`$D705` option `$0D`).
