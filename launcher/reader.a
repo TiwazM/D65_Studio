@@ -1,6 +1,9 @@
 ; D65 Studio resident read-only service v2 (direct SD sector reads). Original MIT code.
 ; Entry $1600, buffer $1D00, mailbox $1E00; ABI in Resident-driver.txt.
 !cpu 4502
+; Builds: plain (SD sector reads, streaming), COMPAT (adds the LOAD hook, no
+; streaming), FLOPPY (reads a DiskLab HD floppy through the F011, no streaming).
+!ifndef COMPAT { !ifndef FLOPPY { STREAM = 1 } }
 * = $1600
 entry:
     jmp engine
@@ -221,8 +224,25 @@ engine:
     ; 0.97). Hyppo leaves the bit clear after mounting an image.
     lda $d689
     sta oldbufsel
+!ifdef FLOPPY {
+    and #$7f            ; floppy: show the F011 buffer
+    sta $d689
+    ; Real drive 0, automatic seeking, rate and encoding from each track's
+    ; Track Info Block (HD and 1581 tracks are mixed on one disk).
+    lda $d6a1
+    lsr
+    bcs realdrive
+    lda #$01
+    sta $d6a1
+realdrive:
+    lda #$80
+    sta $d696
+    lda #$f0
+    sta $d6ae
+} else {
     ora #$80
     sta $d689
+}
     lda $d68b
     sta $1e0a
     lda $d68a
@@ -234,6 +254,7 @@ engine:
     lda #1
     sta $1e08
     sta $1e06
+!ifndef FLOPPY {
     ; D68B bit 0 enables the image; bit 6 selects D65.
     lda $d68b
     and #$41
@@ -245,15 +266,16 @@ mounted:
     lda $d68a
     and #$40
     lbne fail
+}
 formatok:
-!ifndef COMPAT {
+!ifdef STREAM {
     lda $1e0e
     cmp #8
     lbeq stream
 }
     jsr lookup
     lbcs fail
-!ifndef COMPAT {
+!ifdef STREAM {
     lda $1e0e
     cmp #6
     bcc notopen
@@ -358,6 +380,66 @@ validlink:
     sta $1e0c
     lda $1e01
     sta $1e0d
+!ifdef FLOPPY {
+    ; Logical track t is cylinder t-1. Tracks 36-44 are 1581 double density
+    ; (20 logical sectors per side), the others HD (42 per side); each
+    ; 512-byte physical sector holds two logical sectors.
+    lda #7
+    sta $1e08
+    ldx #42
+    lda $1e00
+    cmp #36
+    bcc fhd
+    cmp #45
+    bcs fhd
+    ldx #20
+fhd:
+    stx offset
+    lda $1e01
+    ldy #0
+    cmp offset
+    bcc fside
+    sbc offset
+    iny
+fside:
+    lsr
+    clc
+    adc #1
+    sta $d085
+    sty $d086
+    lda #$68            ; motor on, drive 0, side 0
+    cpy #0
+    beq fsel
+    lda #$60            ; side 1
+fsel:
+    sta $d080
+    lda $1e00
+    sec
+    sbc #1
+    sta $d084
+    lda #8
+    sta offset+1        ; retries (the first reads may meet a spinning-up motor)
+fretry:
+    lda #$08
+    sta $1e08
+    lda #$00
+    sta $d081
+    lda #$01
+    sta $d081
+    lda #$40
+    sta $d081
+fwait:
+    lda $d082           ; the controller ends with RNF after its own timeout
+    bmi fwait
+    lda #$09
+    sta $1e08
+    lda $d082
+    and #$18            ; RNF or CRC
+    beq buffer
+    dec offset+1
+    bne fretry
+    jmp fail
+} else {
     ; Image sector = (track-1) * 128 + logical sector / 2: 128 half-KB
     ; sectors per D65 track (256 x 256 bytes).
     lda $1e00
@@ -411,6 +493,7 @@ readok:
     lda $d680
     and #$60
     lbne fail
+}
 buffer:
     ; Copy the wanted 256-byte half of the SD sector buffer at $FFD6E00.
     lda #$0a
@@ -422,7 +505,7 @@ buffer:
     lda $1e01
     and #1
     clc
-    adc #$6e
+!ifdef FLOPPY { adc #$6c } else { adc #$6e }
     sta dmasrc+1
     lda #0
     sta dmasrc
@@ -568,7 +651,7 @@ stagedone:
     jmp finished
 continue:
     jmp next
-!ifndef COMPAT {
+!ifdef STREAM {
 ; Command 8: copy up to $1E18 blocks (254 bytes each, the last one shorter)
 ; of the open file to Attic RAM at megabyte $1E14, bank $1E0F, address
 ; $1E10/$1E11. The destination advances, so repeated calls stream the whole
@@ -706,7 +789,7 @@ lookup:
     lda #$12
     sta $1e08
     lda $1e0e
-!ifdef COMPAT { cmp #6 } else { cmp #8 }
+!ifdef COMPAT { cmp #6 } else { !ifdef STREAM { cmp #8 } else { cmp #5 } }
     bcc commandok
     sec
     rts
@@ -783,7 +866,7 @@ lookupnext:
     beq matchname
     cmp #3
     beq matchname
-!ifndef COMPAT {
+!ifdef STREAM {
     cmp #7
     beq matchname
 }
@@ -843,7 +926,7 @@ parameters:
     beq lookupok
     cmp #2
     beq lookupok
-!ifndef COMPAT {
+!ifdef STREAM {
     cmp #6
     bcs lookupok
 }

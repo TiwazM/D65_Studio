@@ -4,6 +4,7 @@ const COMPAT_READER: &[u8] = include_bytes!("../launcher/reader-compat.bin");
 const COMPAT_GATEWAY: &[u8] = include_bytes!("../launcher/compat-gateway.bin");
 const COMPAT_LOAD: &[u8] = include_bytes!("../launcher/compat-load.bin");
 const READER: &[u8] = include_bytes!("../launcher/reader.bin");
+const FLOPPY_READER: &[u8] = include_bytes!("../launcher/reader-floppy.bin");
 pub const MAX_PRG: usize = 0xd701; // address bytes + $2001..$f6ff
 const CATALOG_ENTRY: usize = 24;
 const MAILBOX: usize = 0x1e00;
@@ -127,12 +128,25 @@ pub fn build_with_compat(sources: &[Disk], compatibility: bool) -> Result<Disk> 
     if programs == 0 || programs > 99 {
         return Err("The menu needs 1–99 MEGA65 BASIC-entry PRGs at $2001, at most 55,041 bytes each. Other files are retained for the resident reader.".into());
     }
-    pack(&files, "D65 RESIDENT", "65", compatibility)
+    pack(&files, "D65 RESIDENT", "65", compatibility, Format::D65)
 }
 
 /// Lay out START, the catalogue and every file in a fresh resident image.
 /// Resident images are changed by repacking, never by DOS-style allocation.
-fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) -> Result<Disk> {
+fn pack(
+    files: &[(Entry, Vec<u8>)],
+    label: &str,
+    id: &str,
+    compatibility: bool,
+    format: Format,
+) -> Result<Disk> {
+    if format == Format::D81 {
+        return Err("Resident compilations are D65 images or HD floppies.".into());
+    }
+    let floppy = format == Format::Hd;
+    if floppy && compatibility {
+        return Err("LOAD compatibility is not available on floppies.".into());
+    }
     if files.len() > 295 {
         return Err("Too many files: at most 295 files plus START.".into());
     }
@@ -150,8 +164,8 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
     catalog[5..7].copy_from_slice(&(files.len() as u16).to_le_bytes());
     // DATA values use three decimal digits, so substituting final addresses
     // cannot change START's length or allocation (no layout fixed-point guess).
-    let placeholder = make_start(&menu, &catalog, compatibility)?;
-    let mut disk = Disk::create(Format::D65, label, id)?;
+    let placeholder = make_start(&menu, &catalog, compatibility, floppy)?;
+    let mut disk = Disk::create(format, label, id)?;
     disk.put("START", 2, &placeholder, false)?;
     let start = disk.entries()?.remove(0);
     let start_chain = disk.chain(&start)?;
@@ -169,29 +183,7 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
         autoboot_chain = disk.chain(&e)?;
         occupied.extend(autoboot_chain.iter().copied());
     }
-    // Fill the D81-shaped area first (tracks 1..80, sectors 0..39, which the
-    // ROM can load from), then the rest of each 40-sector group across all
-    // tracks, so small compilations stay D81-shaped.
-    let mut free = Vec::new();
-    for group in (0..256).step_by(40) {
-        for t in 1..=85 {
-            if t == 40 || (group == 0 && t > 80) {
-                continue;
-            }
-            for s in group..(group + 40).min(256) {
-                if !occupied.contains(&(t, s as u8)) {
-                    free.push((t, s as u8));
-                }
-            }
-        }
-    }
-    for t in 81..=85 {
-        for s in 0..40u8 {
-            if !occupied.contains(&(t, s)) {
-                free.push((t, s));
-            }
-        }
-    }
+    let free = free_blocks(format, &occupied);
     // Hidden files are usually helpers a program loads by itself through the
     // ROM, so they take the ROM-readable blocks before anything else.
     let mut chains: Vec<Vec<(u8, u8)>> = vec![Vec::new(); files.len()];
@@ -211,15 +203,31 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
     }
     debug_assert_eq!(
         free.len() + start_chain.len() + autoboot_chain.len(),
-        crate::disk::PAYLOAD_BLOCKS
+        format.payload_blocks()
     );
+    if floppy {
+        // The ROM loads START and AUTOBOOT.C65, and only reads 1581 tracks.
+        let rom = |chain: &[(u8, u8)]| {
+            chain
+                .iter()
+                .all(|(t, _)| crate::disk::HD_DD_TRACKS.contains(t))
+        };
+        if !rom(&start_chain) || !rom(&autoboot_chain) {
+            return Err("START is too large for the floppy's 1581 boot tracks.".into());
+        }
+    }
     let needed: usize = files
         .iter()
         .filter(|(e, _)| e.name != AUTOBOOT)
         .map(|(_, d)| d.len().div_ceil(254).max(1))
         .sum();
     if needed > free.len() {
-        return Err(format!("These files exceed the launch disk capacity: {} blocks needed, {} available after START (about 5.4 MB before START).", needed, free.len()));
+        return Err(format!(
+            "These files exceed the {} capacity: {} blocks needed, {} available after START.",
+            if floppy { "HD floppy" } else { "launch disk" },
+            needed,
+            free.len()
+        ));
     }
     let mut slots = vec![disk.bytes[start.offset + 2..start.offset + 32].to_vec()];
     for (index, (entry, data)) in files.iter().enumerate() {
@@ -255,7 +263,7 @@ fn pack(files: &[(Entry, Vec<u8>)], label: &str, id: &str, compatibility: bool) 
         c[22] = entry.kind;
         c[23] = high;
     }
-    let starter = make_start(&menu, &catalog, compatibility)?;
+    let starter = make_start(&menu, &catalog, compatibility, floppy)?;
     if starter.len() != placeholder.len() {
         return Err("Internal START layout mismatch.".into());
     }
@@ -362,7 +370,30 @@ pub fn create_editable(label: &str, id: &str) -> Result<Disk> {
     if encode_name(id, 2)?.len() != 2 {
         return Err("Disk ID must be exactly two characters.".into());
     }
-    pack(&[], label, id, false)
+    pack(&[], label, id, false, Format::D65)
+}
+
+/// An empty DiskLab HD floppy (about 1.66 MB) with a floppy START.
+pub fn create_floppy(label: &str, id: &str) -> Result<Disk> {
+    if encode_name(id, 2)?.len() != 2 {
+        return Err("Disk ID must be exactly two characters.".into());
+    }
+    pack(&[], label, id, false, Format::Hd)
+}
+
+/// The same files packed for an HD floppy (or back into a D65).
+pub fn convert_resident(disk: &Disk, format: Format) -> Result<Disk> {
+    if !is_editable(disk) {
+        return Err("Only resident-reader compilations can be converted this way.".into());
+    }
+    let compat = compatibility(disk)? && format == Format::D65;
+    pack(
+        &contents(disk)?,
+        &disk.label(),
+        &disk.disk_id(),
+        compat,
+        format,
+    )
 }
 
 /// Any resident-reader compilation can be repacked from its own directory,
@@ -371,7 +402,7 @@ pub fn is_editable(disk: &Disk) -> bool {
     let Ok(h) = disk.offset(40, 0) else {
         return false;
     };
-    disk.format == Format::D65 && disk.bytes[h + 48..h + 56] == *b"D65RES01"
+    disk.format != Format::D81 && disk.bytes[h + 48..h + 56] == *b"D65RES01"
 }
 
 fn compatibility(disk: &Disk) -> Result<bool> {
@@ -386,6 +417,7 @@ fn regenerate(disk: &Disk) -> Result<Disk> {
         &disk.label(),
         &disk.disk_id(),
         compatibility(disk)?,
+        disk.format,
     )
 }
 
@@ -427,7 +459,13 @@ fn repack(disk: &mut Disk, files: &[(Entry, Vec<u8>)]) -> Result<()> {
     if !is_editable(disk) {
         return Err("Only resident-reader compilations can be repacked.".into());
     }
-    *disk = pack(files, &disk.label(), &disk.disk_id(), compatibility(disk)?)?;
+    *disk = pack(
+        files,
+        &disk.label(),
+        &disk.disk_id(),
+        compatibility(disk)?,
+        disk.format,
+    )?;
     Ok(())
 }
 
@@ -525,8 +563,53 @@ fn write_chain(disk: &mut Disk, chain: &[(u8, u8)], data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn make_start(menu: &[(String, usize)], catalog: &[u8], compatibility: bool) -> Result<Vec<u8>> {
-    let reader = if compatibility { COMPAT_READER } else { READER };
+/// Free blocks in packing order. D65: the D81-shaped area first (tracks 1..80,
+/// sectors 0..39, which the ROM can load from), then the rest of each
+/// 40-sector group. HD floppy: the 1581 tracks first (ROM-loadable), then the
+/// HD tracks.
+fn free_blocks(format: Format, occupied: &std::collections::HashSet<(u8, u8)>) -> Vec<(u8, u8)> {
+    let mut free = Vec::new();
+    let mut take = |t: u8, s: usize| {
+        if !occupied.contains(&(t, s as u8)) {
+            free.push((t, s as u8));
+        }
+    };
+    if format == Format::Hd {
+        for t in crate::disk::HD_DD_TRACKS.filter(|t| *t != 40) {
+            (0..40).for_each(|s| take(t, s));
+        }
+        for t in (1..=format.tracks()).filter(|t| !crate::disk::HD_DD_TRACKS.contains(t)) {
+            (0..format.sectors(t)).for_each(|s| take(t, s));
+        }
+        return free;
+    }
+    for group in (0..256).step_by(40) {
+        for t in 1..=85u8 {
+            if t == 40 || (group == 0 && t > 80) {
+                continue;
+            }
+            (group..(group + 40).min(256)).for_each(|s| take(t, s));
+        }
+    }
+    for t in 81..=85 {
+        (0..40).for_each(|s| take(t, s));
+    }
+    free
+}
+
+fn make_start(
+    menu: &[(String, usize)],
+    catalog: &[u8],
+    compatibility: bool,
+    floppy: bool,
+) -> Result<Vec<u8>> {
+    let reader = if floppy {
+        FLOPPY_READER
+    } else if compatibility {
+        COMPAT_READER
+    } else {
+        READER
+    };
     let mut basic = Vec::new();
     line(&mut basic, 10, &token("BANK0"));
     line(
@@ -1188,6 +1271,68 @@ mod editable_tests {
             .iter()
             .all(|(t, s)| (1..=80).contains(t) && *t != 40 && *s < 40));
         assert_eq!(disk.read(&helper).unwrap(), PROGRAM);
+    }
+    #[test]
+    fn hd_floppy_packs_into_its_geometry() {
+        use crate::disk::{HD_DD_TRACKS, HD_SIZE};
+        let mut disk = create_floppy("FLOPPY", "65").unwrap();
+        assert_eq!(disk.format, Format::Hd);
+        assert_eq!(disk.bytes.len(), HD_SIZE);
+        assert!(is_editable(&disk));
+        set_autoboot(&mut disk, true).unwrap();
+        disk.put("GAME", 2, &PROGRAM, false).unwrap();
+        disk.put("HELPER", 2, &PROGRAM, false).unwrap();
+        let helper = disk
+            .entries()
+            .unwrap()
+            .into_iter()
+            .find(|e| e.name == "HELPER")
+            .unwrap();
+        set_hidden(&mut disk, &helper, true).unwrap();
+        disk.put("DATA", 1, &vec![0x5a; 1_500_000], false).unwrap();
+        let again = Disk::parse(disk.bytes.clone()).unwrap();
+        assert_eq!(again.format, Format::Hd);
+        let es = again.entries().unwrap();
+        let rom = |name: &str| {
+            let e = es.iter().find(|e| e.name == name).unwrap();
+            again
+                .chain(e)
+                .unwrap()
+                .iter()
+                .all(|(t, _)| HD_DD_TRACKS.contains(t))
+        };
+        assert!(rom("START") && rom("AUTOBOOT.C65") && rom("HELPER"));
+        for e in &es {
+            for (t, s) in again.chain(e).unwrap() {
+                assert!((1..=83).contains(&t) && t != 40);
+                assert!((s as usize) < Format::Hd.sectors(t));
+            }
+        }
+        let data = es.iter().find(|e| e.name == "DATA").unwrap();
+        assert_eq!(again.read(data).unwrap(), vec![0x5a; 1_500_000]);
+        let start = again.read(&es[0]).unwrap();
+        assert!(start.windows(4).any(|b| b == b"GAME"));
+        let (used, total) = again.resident_space().unwrap();
+        assert_eq!(total, 8 * 40 + 74 * 84);
+        assert!(used < total);
+        // A D65 compilation converts to a floppy and back, files unchanged.
+        let mut d65 = create_editable("BIG", "65").unwrap();
+        d65.put("GAME", 2, &PROGRAM, false).unwrap();
+        d65.put("BLOB", 1, &vec![7; 300_000], false).unwrap();
+        let fl = convert_resident(&d65, Format::Hd).unwrap();
+        let back = convert_resident(&fl, Format::D65).unwrap();
+        let blob = |d: &Disk| {
+            let e = d
+                .entries()
+                .unwrap()
+                .into_iter()
+                .find(|e| e.name == "BLOB")
+                .unwrap();
+            d.read(&e).unwrap()
+        };
+        assert_eq!(blob(&fl), vec![7; 300_000]);
+        assert_eq!(blob(&back), vec![7; 300_000]);
+        assert!(disk.put("HUGE", 1, &vec![1; 1_800_000], false).is_err());
     }
     #[test]
     fn store_edits_and_reopens_large_disk() {

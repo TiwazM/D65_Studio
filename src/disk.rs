@@ -7,32 +7,61 @@ pub const D65_SIZE: usize = 5_570_560;
 /// 254-byte payload blocks available to a resident compilation: every logical
 /// sector of the 84 non-directory tracks (about 5.46 MB).
 pub const PAYLOAD_BLOCKS: usize = 84 * 256;
+/// DiskLab HD floppy image: 83 tracks of 84 logical 256-byte sectors, i.e.
+/// 83 cylinders x 2 sides x 21 sectors of 512 bytes at the standard HD rate.
+pub const HD_SIZE: usize = 83 * 84 * 256;
+/// Tracks of an HD floppy kept in 1581 double density (20 logical sectors per
+/// side) so the ROM can list the disk and load START from it.
+pub const HD_DD_TRACKS: std::ops::RangeInclusive<u8> = 36..=44;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Format {
     D81,
     D65,
+    /// DiskLab HD floppy (written with Write to Floppy, not mountable).
+    Hd,
 }
 impl Format {
     pub fn stride(self) -> usize {
-        if self == Self::D81 {
-            40
-        } else {
-            256
+        match self {
+            Self::D81 => 40,
+            Self::D65 => 256,
+            Self::Hd => 84,
+        }
+    }
+    pub fn tracks(self) -> u8 {
+        match self {
+            Self::D81 => 80,
+            Self::D65 => 85,
+            Self::Hd => 83,
+        }
+    }
+    /// Logical 256-byte sectors on a track.
+    pub fn sectors(self, track: u8) -> usize {
+        match self {
+            Self::Hd if HD_DD_TRACKS.contains(&track) => 40,
+            other => other.stride(),
         }
     }
     pub fn size(self) -> usize {
-        if self == Self::D81 {
-            D81_SIZE
-        } else {
-            D65_SIZE
+        match self {
+            Self::D81 => D81_SIZE,
+            Self::D65 => D65_SIZE,
+            Self::Hd => HD_SIZE,
         }
     }
     pub fn ext(self) -> &'static str {
-        if self == Self::D81 {
-            "d81"
-        } else {
-            "d65"
+        match self {
+            Self::D81 => "d81",
+            Self::D65 => "d65",
+            Self::Hd => "dhd",
         }
+    }
+    /// Payload blocks of a resident compilation (all tracks but 40).
+    pub fn payload_blocks(self) -> usize {
+        (1..=self.tracks())
+            .filter(|t| *t != 40)
+            .map(|t| self.sectors(t))
+            .sum()
     }
 }
 #[derive(Clone)]
@@ -299,9 +328,10 @@ impl Disk {
         let format = match bytes.len() {
             D81_SIZE => Format::D81,
             D65_SIZE => Format::D65,
+            HD_SIZE => Format::Hd,
             n => {
                 return Err(format!(
-                "Unsupported image size: {n} bytes. Expected D81 (819200) or MEGA65 D65 (5570560)."
+                "Unsupported image size: {n} bytes. Expected D81 (819200), MEGA65 D65 (5570560) or DiskLab HD floppy (1784832)."
             ))
             }
         };
@@ -358,8 +388,7 @@ impl Disk {
         Ok(d)
     }
     pub fn offset(&self, t: u8, s: u8) -> Result<usize> {
-        let tracks = if self.format == Format::D81 { 80 } else { 85 };
-        if t == 0 || t as usize > tracks || s as usize >= self.format.stride() {
+        if t == 0 || t > self.format.tracks() || s as usize >= self.format.sectors(t) {
             return Err(format!("Invalid track/sector {t}/{s}."));
         }
         Ok(((t as usize - 1) * self.format.stride() + s as usize) * 256)
@@ -458,7 +487,7 @@ impl Disk {
     /// Allocation use of a resident compilation, including START, in 254-byte blocks.
     pub fn resident_space(&self) -> Option<(usize, usize)> {
         let h = self.offset(40, 0).ok()?;
-        if self.format != Format::D65 || self.bytes[h + 48..h + 56] != *b"D65RES01" {
+        if self.format == Format::D81 || self.bytes[h + 48..h + 56] != *b"D65RES01" {
             return None;
         }
         let mut used = HashSet::new();
@@ -469,7 +498,7 @@ impl Disk {
                 }
             }
         }
-        Some((used.len(), PAYLOAD_BLOCKS))
+        Some((used.len(), self.format.payload_blocks()))
     }
     pub fn chain(&self, e: &Entry) -> Result<Vec<(u8, u8)>> {
         let (mut t, mut s) = e.start;
