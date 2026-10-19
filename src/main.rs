@@ -143,6 +143,7 @@ struct Studio {
     send_progress: Arc<Mutex<Vec<String>>>,
     send_started: Option<std::time::Instant>,
     send_result: Option<String>,
+    floppy_open: bool,
     prefs_open: bool,
     tool_m65rs: String,
     tool_ftp: String,
@@ -197,6 +198,7 @@ impl Default for Studio {
             send_progress: Arc::new(Mutex::new(Vec::new())),
             send_started: None,
             send_result: None,
+            floppy_open: false,
             prefs_open: false,
             tool_m65rs: load_settings().0,
             tool_ftp: load_settings().1,
@@ -335,6 +337,62 @@ impl Studio {
             self.send_name = mega65_disklab::sd_export::suggested_name(&s.path, s.disk.format);
         }
         self.send_open = true;
+    }
+    fn start_floppy(&mut self) {
+        let Some(disk) = self.store.as_ref().map(|s| s.lock().unwrap().disk.clone()) else {
+            return;
+        };
+        let disk = if disk.format == Format::Hd {
+            disk
+        } else {
+            match mega65_disklab::launcher::convert_resident(&disk, Format::Hd) {
+                Ok(d) => d,
+                Err(e) => {
+                    self.report(Err(e), "");
+                    return;
+                }
+            }
+        };
+        let Some(tool) = self
+            .tools()
+            .into_iter()
+            .find(|t| t.kind == transfer::Kind::M65rs)
+        else {
+            self.report(Err("Writing a floppy needs m65rs (MEGA65 Studio). Set its path under File › Preferences.".into()), "");
+            return;
+        };
+        let device = (!self.send_device.is_empty()).then(|| self.send_device.clone());
+        self.floppy_open = false;
+        self.send_result = None;
+        self.send_started = Some(std::time::Instant::now());
+        self.send_progress.lock().unwrap().clear();
+        let progress = self.send_progress.clone();
+        self.status = "Writing the floppy through the MEGA65…".into();
+        self.error = false;
+        self.send_task = Some(std::thread::spawn(move || {
+            let work = tempfile::tempdir().map_err(|e| e.to_string())?;
+            let r = mega65_disklab::floppy::write_disk(
+                &tool,
+                device,
+                &disk,
+                work.path(),
+                |n, total, msg| {
+                    let mut p = progress.lock().unwrap();
+                    p.clear();
+                    p.push(format!("{n} of {total} track sides"));
+                    p.push(msg.to_string());
+                },
+            )?;
+            Ok(format!(
+                "Floppy written and verified: {} track sides, {} sectors ({:.2} MB){} in {} min {} s.",
+                r.track_sides,
+                r.sectors,
+                r.sectors as f64 * 512.0 / 1e6,
+                if r.rewrites > 0 { format!(", {} track sides written twice", r.rewrites) } else { String::new() },
+                r.seconds / 60,
+                r.seconds % 60
+            ))
+        }));
     }
     fn start_send(&mut self) {
         let Some(tool) = self.send_tool.clone() else {
@@ -806,6 +864,10 @@ impl eframe::App for Studio {
                 .join()
                 .unwrap_or_else(|_| Err("Transfer worker stopped unexpectedly.".into()));
             match r {
+                Ok(tail) if tail.starts_with("Floppy written") => {
+                    self.report(Ok(()), &tail);
+                    self.send_result = Some(tail);
+                }
                 Ok(tail) => {
                     self.report(Ok(()), "Image sent to the MEGA65's SD card.");
                     self.send_result = Some(format!(
@@ -1007,6 +1069,7 @@ impl eframe::App for Studio {
                                 if ui.button("Over USB JTAG…").clicked() { self.open_send(false); ui.close_menu(); }
                                 if ui.button("Over Ethernet…").clicked() { self.open_send(true); ui.close_menu(); }
                                 ui.separator();
+                                if ui.button("Write to Floppy…").on_hover_text("Writes this image to a 3.5\" HD disk in the MEGA65's internal drive (a resident D65 is packed for the floppy first).").clicked() { self.floppy_open = true; ui.close_menu(); }
                                 if ui.button("Any File to the Card…").on_hover_text("Puts a file such as a game's data file (SPACE.SCP) in the card's root folder over USB JTAG.").clicked() { self.ask(Pick::SendFile, one(rfd::AsyncFileDialog::new().set_title("Choose the file to put on the SD card").pick_file())); ui.close_menu(); }
                             });
                         });
@@ -1365,20 +1428,31 @@ impl eframe::App for Studio {
                     ui.horizontal(|ui| {
                         ui.radio_value(&mut self.format, Format::D65, "D65 · MEGA65");
                         ui.radio_value(&mut self.format, Format::D81, "D81 · 1581");
+                        ui.radio_value(&mut self.format, Format::Hd, "HD floppy");
                     });
                     ui.add_enabled_ui(self.format == Format::D65, |ui| {
                         ui.checkbox(&mut self.big, "Large D65 with START resident reader");
                         ui.add_enabled(self.big, egui::Checkbox::new(&mut self.autoboot, "Run START by itself after a reset (AUTOBOOT.C65)"));
                     });
                     let big = self.big && self.format == Format::D65;
-                    ui.label(if big {
+                    let floppy = self.format == Format::Hd;
+                    ui.label(if floppy {
+                        "A 3.5\" HD disk for the MEGA65's internal drive: about 1.66 MB for files plus START, written with File › Write to Floppy. The ROM boots it; START reads the rest at HD density."
+                    } else if big {
                         "About 5.4 MB shared by START and your files. RUN \"START\" on the MEGA65 for a menu of BASIC programs; the resident reader loads the rest. Files are packed again on every change."
                     } else {
                         "Both use the supported 800 KiB filesystem geometry."
                     });
                     ui.horizontal(|ui| {
                         if ui.button("Create…").clicked() {
-                            let disk = if big {
+                            let disk = if floppy {
+                                mega65_disklab::launcher::create_floppy(&self.label, &self.id).and_then(|mut d| {
+                                    if self.autoboot {
+                                        mega65_disklab::launcher::set_autoboot(&mut d, true)?;
+                                    }
+                                    Ok(d)
+                                })
+                            } else if big {
                                 mega65_disklab::launcher::create_editable(&self.label, &self.id).and_then(|mut d| {
                                     if self.autoboot {
                                         mega65_disklab::launcher::set_autoboot(&mut d, true)?;
@@ -1529,6 +1603,21 @@ impl eframe::App for Studio {
                 if ui.button("Close").clicked() { self.prefs_open = false; }
             });
         }
+        if self.floppy_open {
+            egui::Window::new("Write to Floppy").collapsible(false).resizable(false).default_width(520.0).show(ctx, |ui| {
+                ui.label("Writes the open image to the HD disk in the MEGA65's internal drive (drive 0), track by track, and reads every track back to check it. A resident D65 is packed for the floppy first; it must fit in about 1.66 MB.");
+                ui.colored_label(Color32::YELLOW, "Everything on that floppy is erased.");
+                ui.label("The MEGA65 must be at READY, connected over the USB JTAG adapter. Writing takes a few minutes.");
+                if !self.tools().iter().any(|t| t.kind == transfer::Kind::M65rs) {
+                    ui.colored_label(Color32::YELLOW, "m65rs (MEGA65 Studio) was not found; set it under File › Preferences.");
+                }
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Write").clicked() { self.start_floppy(); }
+                    if ui.button("Cancel").clicked() { self.floppy_open = false; }
+                });
+            });
+        }
         if self.send_open {
             egui::Window::new("Send to MEGA65").collapsible(false).resizable(false).default_width(520.0).show(ctx, |ui| {
                 ui.label("The MEGA65 writes the image to its own SD card in one contiguous run, so nothing is written to a card from this computer and no administrator prompt appears.");
@@ -1630,6 +1719,7 @@ impl eframe::App for Studio {
 }
 fn cli(args: &[String]) -> Result<()> {
     match args.first().map(String::as_str){
+        Some("create") if args.len()==4&&args[1].eq_ignore_ascii_case("dhd")=>{Store::create(Path::new(&args[2]),mega65_disklab::launcher::create_floppy(&args[3],"65")?)?;println!("HD floppy image created. Add files, then write it with write-floppy.");},
         Some("create") if args.len()==4&&args[1].eq_ignore_ascii_case("d65big")=>{Store::create(Path::new(&args[2]),mega65_disklab::launcher::create_editable(&args[3],"65")?)?;println!("Large D65 with START resident reader created. Use add to put files on it; START is rebuilt each time.");},
         Some("send") if args.len()>=3=>{
             let image=fs::canonicalize(&args[1]).map_err(|e|e.to_string())?;if transfer::card_name(&args[2].to_ascii_uppercase())?{Disk::parse(fs::read(&image).map_err(|e|e.to_string())?)?;}
@@ -1637,6 +1727,11 @@ fn cli(args: &[String]) -> Result<()> {
             while i<args.len(){let next=args.get(i+1).filter(|a|!a.starts_with("--")).cloned();match args[i].as_str(){"--mount"=>mount=true,"--run"=>{mount=true;run=true},"--ethernet"=>{if next.is_some(){i+=1}link=Link::Ethernet(next)},"--serial"=>{if next.is_some(){i+=1}link=Link::Serial(next)},"--tool"=>{tool=next.ok_or("--tool needs a path")?.into();i+=1},o=>return Err(format!("Unknown option {o}"))}i+=1}
             let tool=match tool{Some(p)=>{let p=PathBuf::from(p);Tool{kind:if p.file_name().unwrap_or_default().to_string_lossy().contains("ftp"){transfer::Kind::Mega65Ftp}else{transfer::Kind::M65rs},path:p}},None=>transfer::preferred(&transfer::find_tools_with(&tool_overrides(&load_settings())),matches!(link,Link::Ethernet(_))).cloned().ok_or("No transfer tool found. Install MEGA65 Studio (m65rs) or M65Connect (mega65_ftp), or pass --tool PATH.")?};
             let tools=transfer::find_tools_with(&tool_overrides(&load_settings()));let steps=transfer::plan_with(&tool,&tools,&link,&image,&name,mount,run)?;let tail=transfer::run(&steps,|l|println!("{l}"))?;println!("Sent {name} to the MEGA65's SD card with {}.\n{tail}",tool.name());},
+        Some("floppy-flux") if args.len()==5=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;let cyl:u8=args[2].parse().map_err(|_|"cylinder")?;let side:u8=args[3].parse().map_err(|_|"side")?;let (f,split)=mega65_disklab::floppy::track_flux(&d,cyl,side)?;fs::write(&args[4],&f).map_err(|e|e.to_string())?;println!("{} flux bytes, split at {split}",f.len());},
+        Some("write-floppy") if args.len()>=2=>{let image=fs::read(&args[1]).map_err(|e|e.to_string())?;let d=Disk::parse(image)?;let mut device=None;let mut tool=None;let mut i=2;while i<args.len(){match args[i].as_str(){"--serial"=>{device=args.get(i+1).cloned();i+=1},"--tool"=>{tool=args.get(i+1).cloned();i+=1},o=>return Err(format!("Unknown option {o}"))}i+=1}
+            let tool=match tool{Some(p)=>Tool{kind:transfer::Kind::M65rs,path:PathBuf::from(p)},None=>transfer::find_tools_with(&tool_overrides(&load_settings())).into_iter().find(|t|t.kind==transfer::Kind::M65rs).ok_or("Writing a floppy needs m65rs (MEGA65 Studio); set its path under File › Preferences or pass --tool.")?};
+            let work=tempfile::tempdir().map_err(|e|e.to_string())?;let r=mega65_disklab::floppy::write_disk(&tool,device,&d,work.path(),|n,t,m|{println!("[{n}/{t}] {m}")})?;println!("Floppy written and verified: {} track sides, {} sectors, {} rewrites, {} s.",r.track_sides,r.sectors,r.rewrites,r.seconds);},
+        Some("convert-floppy") if args.len()==3=>{let d=Disk::parse(fs::read(&args[1]).map_err(|e|e.to_string())?)?;let f=mega65_disklab::launcher::convert_resident(&d,Format::Hd)?;Store::create(Path::new(&args[2]),f)?;println!("HD floppy image written.");},
         Some("hide") if args.len()==4&&(args[3]=="on"||args[3]=="off")=>{let mut s=Store::open(Path::new(&args[1]))?;let e=s.disk.entries()?.into_iter().find(|e|e.name==args[2].to_ascii_uppercase()).ok_or("No such file on the image")?;s.change(|d|mega65_disklab::launcher::set_hidden(d,&e,args[3]=="on"))?;println!("{} {} the START menu.",e.name,if args[3]=="on"{"hidden from"}else{"shown in"});},
         Some("autoboot") if args.len()==3&&(args[2]=="on"||args[2]=="off")=>{let mut s=Store::open(Path::new(&args[1]))?;s.change(|d|mega65_disklab::launcher::set_autoboot(d,args[2]=="on"))?;println!("AUTOBOOT.C65 {}.",if args[2]=="on"{"added: START runs after a reset while the image is mounted"}else{"removed"});},
         Some("update-start") if args.len()==2=>{let mut s=Store::open(Path::new(&args[1]))?;if !mega65_disklab::launcher::start_outdated(&s.disk)?{println!("START is already current.");}else{s.change(|d|mega65_disklab::launcher::update_start(d))?;println!("START replaced with the current reader and menu. Files are unchanged; a backup was kept beside the image.");}},
@@ -1654,7 +1749,7 @@ fn cli(args: &[String]) -> Result<()> {
         Some("serve") if args.len()==2=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let b=mega65_disklab::mount::bridge(s,false)?;println!("{}",b.url);loop{std::thread::sleep(std::time::Duration::from_secs(1));}},
         #[cfg(any(target_os="macos", windows))]
         Some("mount") if args.len()==3||args.len()==4=>{let s=Arc::new(Mutex::new(Store::open(Path::new(&args[1]))?));let ro=args.get(3).map(String::as_str)==Some("--read-only");mega65_disklab::mount::start(s,Path::new(&args[2]),ro)?.join().map_err(|_|"Mount worker panicked")??;},
-        _=>return Err("Usage: mega65-disklab [IMAGE] | create d65|d81|d65big PATH LABEL | list IMAGE | update-start IMAGE | autoboot IMAGE on|off | hide IMAGE NAME on|off | send IMAGE NAME.D65 [--serial [PORT] | --ethernet [IPV6]] [--mount] [--run] [--tool PATH] | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
+        _=>return Err("Usage: mega65-disklab [IMAGE] | create d65|d81|d65big|dhd PATH LABEL | convert-floppy D65 OUT.dhd | write-floppy IMAGE.dhd [--serial PORT] [--tool PATH] | list IMAGE | update-start IMAGE | autoboot IMAGE on|off | hide IMAGE NAME on|off | send IMAGE NAME.D65 [--serial [PORT] | --ethernet [IPV6]] [--mount] [--run] [--tool PATH] | add IMAGE FILE NAME | convert INPUT OUTPUT d65|d81 | export-sd INPUT NEW_OUTPUT | merge OUTPUT.d65 FIRST.d81 SECOND.d81 [THIRD.d81] | launch OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | launch-compat OUTPUT.d65 FIRST.d81 [MORE.d81 ...] | mount IMAGE EMPTY_FOLDER [--read-only]".into())
     }
     Ok(())
 }

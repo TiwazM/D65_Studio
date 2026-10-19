@@ -1,0 +1,146 @@
+; MEGA65 DiskLab floppy track writer. The host loads this at $1600, the
+; track's flux bytes at $40000 and the parameters below, then jumps here.
+;
+; Write: the controller's unbuffered format ($D081 = $A1) opens the write
+; gate when the index pulse ends and closes it at the next one. Fed no
+; bytes, it writes nothing itself; the flux comes from DMA option $0D,
+; started at that moment, which the core ANDs into the write-data line.
+; Verify: read every sector back with the normal sector reads, following
+; the track's own Track Info Block, and record $D082 per sector.
+!cpu m65
+* = $1600
+    jmp start
+
+; Parameters (patched by the host) and results.
+cylinder: !byte 0
+side:     !byte 0       ; 0 or 1
+sectors:  !byte 0       ; physical sectors on this track side
+rate:     !byte 0       ; $D6A2 value the track was written at
+done:     !byte 0       ; 1 when finished
+tibok:    !byte 0       ; 1 if the new Track Info Block was seen
+status:   !fill 24, 0   ; $D082 after reading sector 1, 2, ...
+
+; Two chained COPY jobs, split inside an inter-sector gap.
+list:
+    !byte $0d, $80, $00, $81, $00, $00
+    !byte $04           ; COPY, chained
+len1:
+    !word 0
+    !word $0000
+    !byte $04           ; source $40000
+    !word $f000
+    !byte $05           ; destination unused in floppy mode
+    !word 0
+    !byte $0d, $80, $00, $81, $00, $00
+    !byte $00
+len2:
+    !word 0
+src2:
+    !word 0
+    !byte $04
+    !word $f000
+    !byte $05
+    !word 0
+
+
+start:
+    sei
+    lda #$47
+    sta $d02f
+    lda #$53
+    sta $d02f
+    lda #0
+    sta done
+    sta tibok
+    lda $d689
+    and #$7f
+    sta $d689           ; $FFD6C00 shows the F011 buffer
+    lda #$68
+    ldx side
+    beq selside
+    lda #$60
+selside:
+    sta $d080           ; motor on, drive 0, chosen side
+    lda #$00
+    sta $d6ae           ; MFM, no automatic rate while writing
+    sta $d081
+    lda #$a1
+    sta $d081           ; unbuffered format: gate opens at the end of the index pulse
+inpulse:
+    lda $d083
+    and #$04
+    beq inpulse
+pulseend:
+    lda $d083
+    and #$04
+    bne pulseend
+    lda #0
+    sta $d702
+    sta $d704
+    sta $d703
+    lda #>list
+    sta $d701
+    lda #<list
+    sta $d705           ; DMA streams the track; the CPU waits
+gatewait:
+    lda $d082
+    bmi gatewait        ; gate closes at the next index pulse
+
+; Verify.
+    lda rate
+    sta $d6a2
+    lda #$e0
+    sta $d6ae           ; follow the Track Info Block (rate and encoding)
+    ldy #12             ; up to 12 index pulses for the new TIB to show
+tibwait:
+    lda $d6a6
+    cmp cylinder
+    bne tibnext
+    lda $d6a7
+    cmp rate
+    bne tibnext
+    lda #1
+    sta tibok
+    bra verify
+tibnext:
+    lda $d083
+    and #$04
+    beq tibnext
+tibpulse:
+    lda $d083
+    and #$04
+    bne tibpulse
+    dey
+    bne tibwait
+verify:
+    ldx #0
+nextsector:
+    lda #$00
+    sta $d081
+    lda cylinder
+    sta $d084
+    txa
+    clc
+    adc #1
+    sta $d085
+    lda side
+    sta $d086
+    lda #$01
+    sta $d081
+    lda #$40
+    sta $d081
+readwait:
+    lda $d082
+    bmi readwait        ; the controller gives up on its own (RNF)
+    sta status,x
+    inx
+    cpx sectors
+    bne nextsector
+    lda #1
+    sta done
+    cli
+park:
+    jmp park
+
+
+!if list != $1621 { !error "the host expects the DMA list at $1621" }

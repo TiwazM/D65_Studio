@@ -9,6 +9,7 @@ pub mod direct_sd;
 #[path = "direct_sd_windows.rs"]
 pub mod direct_sd;
 pub mod fat_export;
+pub mod floppy;
 pub mod launcher;
 pub mod sd_export;
 pub mod transfer;
