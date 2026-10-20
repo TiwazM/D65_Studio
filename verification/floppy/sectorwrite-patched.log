@@ -1,0 +1,20 @@
+== HD cyl 70 side 1 sector 21 rate 40
+TIB: track 255 rate 81 sectors 0
+before: sector 21 read ok (status $04)
+write: finished, status $00
+after: sector 21 read ok (status $04), data MATCHES
+neighbour sector 20: ok (status $04)
+neighbour sector 22: FAILED (status $10)
+== HD cyl 5 side 0 sector 1 rate 40
+TIB: track 5 rate 40 sectors 21
+before: sector 1 read ok (status $04)
+write: finished, status $00
+after: sector 1 read ok (status $04), data MATCHES
+neighbour sector 2: ok (status $04)
+== DD cyl 37 side 0 sector 3 rate 81
+TIB: track 37 rate 81 sectors 10
+before: sector 3 read ok (status $04)
+write: finished, status $00
+after: sector 3 read ok (status $04), data MATCHES
+neighbour sector 2: ok (status $04)
+neighbour sector 4: ok (status $04)

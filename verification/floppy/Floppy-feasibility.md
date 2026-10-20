@@ -222,3 +222,22 @@ selected rate (or the wait to accept `fdc_sector_found_2x`).
 - Bug found: with an autobooting floppy, START loads its reader at `$1600`, the same
   address as the writer, so the write stalled on track 0. `write_disk` now halts the
   CPU before loading the writer.
+
+## Core fix for HD sector writes: tested (2026-10-20)
+
+Patch (mega65-core, local branch `hd-sector-write` off release-0.97.2):
+`F011WriteSectorRealDriveWait` (sdcardio.vhdl ~4350) also accepts a rising edge of
+`fdc_sector_found_2x`, the header signal of the decoder that follows the selected
+rate, as the read path already does. Built with Vivado 2026.1 in Docker
+(vivado-on-mac), R6, timing met (WNS +0.107 ns).
+
+`sectorwrite-test.py CYL SIDE SECTOR RATE` on a DiskLab HD floppy:
+- Stock 0.97 core, cyl 60 side 0 sector 5 at rate 40: RNF, sector unchanged.
+- Patched core: rate 40 writes to cyl 60/0/5, cyl 70/1/21 and cyl 5/0/1 all read
+  back byte-identical, neighbours intact; rate 81 control on cyl 37/0/3 also fine
+  (sectorwrite-patched.log).
+
+Loading a test core with `m65rs jtag bit`: the flash menu sees a valid BOOTSTS and
+switches to the default flashed slot within a second, so hold ESC on the real
+keyboard while loading (a virtual ESC via $D615 is too late). `m65rs bootslot 1`
+returns to the flashed core afterwards.
