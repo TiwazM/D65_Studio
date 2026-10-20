@@ -335,6 +335,9 @@ pub fn write_disk(
                 );
                 m.poke(PARAMS, &[cyl, side, count as u8, rate(cyl), 0, 0])?;
                 m.run(&["go".into(), format!("{WRITER_AT:x}")])?;
+                // Keep the serial monitor quiet while the track streams out
+                // (index wait plus one revolution).
+                std::thread::sleep(Duration::from_millis(500));
                 let end = Instant::now() + Duration::from_secs(20);
                 while m.peek(DONE)? != 1 {
                     if Instant::now() > end {
@@ -358,7 +361,7 @@ pub fn write_disk(
                 }
                 attempt += 1;
                 report.rewrites += 1;
-                if attempt == 3 {
+                if attempt == 5 {
                     return Err(format!(
                         "Track {cyl} side {side} does not verify (sectors {bad:?}{}). Try another disk.",
                         if tib { "" } else { ", no track info" }

@@ -5,13 +5,18 @@ whose tracks carry Track Info Blocks (a DiskLab HD floppy).
 Writes one 512-byte sector of unique data, reads it back, and checks that the
 neighbouring sectors still read. THIS OVERWRITES THAT SECTOR.
 
-usage: sectorwrite-test.py CYLINDER SIDE SECTOR RATE
+usage: sectorwrite-test.py CYLINDER SIDE SECTOR RATE [WRITE_RATE]
+
+With WRITE_RATE the write is issued with automatic rate off and $D6A2 set to
+WRITE_RATE (the "variable reader" set to that rate); RATE is the track's own
+rate, used for reading.
 """
 import os, subprocess, sys, tempfile, time
 
 M65RS = "/Applications/mega65studio/m65rs"
 IO = 0xFFD3000
 cyl, side, sector, rate = (int(a) for a in sys.argv[1:5])
+write_rate = int(sys.argv[5]) if len(sys.argv) > 5 else None
 
 
 def m65(*a):
@@ -88,8 +93,14 @@ poke(IO + 0x081, 0x00)
 poke(IO + 0x084, cyl)
 poke(IO + 0x085, sector)
 poke(IO + 0x086, side)
+if write_rate:
+    poke(IO + 0x6AE, 0x00)       # fixed rate, MFM
+    poke(IO + 0x6A2, write_rate)
 poke(IO + 0x081, 0x80)
 done = wait_idle(3.0)
+if write_rate:
+    poke(IO + 0x6A2, rate)
+    poke(IO + 0x6AE, 0xE0)
 st = peek(IO + 0x082)
 print(f"write: {'finished' if done else 'still busy'}, status ${st:02x}"
       f"{' RNF' if st & 0x10 else ''}{' CRC' if st & 0x08 else ''}")

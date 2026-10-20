@@ -86,7 +86,19 @@ gatewait:
     lda $d082
     bmi gatewait        ; gate closes at the next index pulse
 
-; Verify.
+; Verify. A step clears the controller's Track Info Block registers, so the
+; check below can only pass on a TIB read from this track side; without it,
+; side 1 would pass on the TIB left over from side 0.
+    lda #$18
+    sta $d081           ; step in...
+stepin:
+    lda $d082
+    bmi stepin
+    lda #$10
+    sta $d081           ; ...and back out (also fine on cylinder 0)
+stepout:
+    lda $d082
+    bmi stepout
     lda rate
     sta $d6a2
     lda #$e0
