@@ -241,3 +241,19 @@ Loading a test core with `m65rs jtag bit`: the flash menu sees a valid BOOTSTS a
 switches to the default flashed slot within a second, so hold ESC on the real
 keyboard while loading (a virtual ESC via $D615 is too late). `m65rs bootslot 1`
 returns to the flashed core afterwards.
+
+## Write trigger: any reader, variable preferred, with a pick window (2026-10-21)
+
+mega65-core branch `hd-sector-write-v4`: the variable reader (mfm_fast) starts a
+sector write at once; if mfm0 (DD) or mfmhdonly (HD, sector_found wired out)
+fires first, wait up to 2592 cycles (2 DD bytes) for mfm_fast, then fall back to
+DD, else HD, overriding the writer's rate/encoding for that sector.
+- v3 (no window) failed on a taped disk: the HD reader fired first on DD tracks
+  and wrote at 40 (sectors read back as zeros); without the HD trigger it passed.
+- v4: taped disk 9/9 as predicted (81 track: V 81/60/40/29 and auto all land at
+  81; ~60 track: V 60 lands, 81/40/29 give RNF untouched). Untaped disk: HD track
+  V 81/60/40/29, auto, side 1 all land at 40; DD-band track all land at 81
+  (gardners-v4-window-*.log).
+- Separate read issue, also on stock 0.97: DD-rate sectors on HD media
+  occasionally read back with one byte wrong and no CRC/RNF flag (3 of 20 reads
+  of cyl 37/0/3; earlier 1 of 25 of cyl 38/0/6, and DOS loads of START).

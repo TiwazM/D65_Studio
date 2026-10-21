@@ -1,0 +1,45 @@
+== 10 0 5 81
+write: finished, status $00
+after: sector 5 read ok (status $04), data MATCHES
+neighbour sector 4: ok (status $04)
+neighbour sector 6: ok (status $04)
+== 10 0 2 81 81
+write: finished, status $00
+after: sector 2 read ok (status $04), data MATCHES
+neighbour sector 1: ok (status $04)
+neighbour sector 3: ok (status $04)
+== 10 0 4 81 60
+write: finished, status $00
+after: sector 4 read ok (status $04), data MATCHES
+neighbour sector 3: ok (status $04)
+neighbour sector 5: ok (status $04)
+== 10 0 6 81 40
+write: finished, status $00
+after: sector 6 read ok (status $04), data MATCHES
+neighbour sector 5: ok (status $04)
+neighbour sector 7: ok (status $04)
+== 10 0 8 81 29
+write: finished, status $00
+after: sector 8 read ok (status $04), data MATCHES
+neighbour sector 7: ok (status $04)
+neighbour sector 9: ok (status $04)
+== 20 0 2 60 81
+write: finished, status $10 RNF
+after: sector 2 read ok (status $04), data differs
+neighbour sector 1: ok (status $04)
+neighbour sector 3: ok (status $04)
+== 20 0 4 60 60
+write: finished, status $00
+after: sector 4 read ok (status $04), data MATCHES
+neighbour sector 3: ok (status $04)
+neighbour sector 5: ok (status $04)
+== 20 0 6 60 40
+write: finished, status $10 RNF
+after: sector 6 read ok (status $04), data differs
+neighbour sector 5: ok (status $04)
+neighbour sector 7: ok (status $04)
+== 20 0 8 60 29
+write: finished, status $10 RNF
+after: sector 8 read ok (status $04), data differs
+neighbour sector 7: ok (status $04)
+neighbour sector 9: ok (status $04)
